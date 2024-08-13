@@ -20,7 +20,7 @@ Header only file for ggml engine
 #include <ggml-alloc.h>
 #include <ggml-backend.h>
 
-#include <nimage/image.h>
+#include <nimage/image.h> // IMAGE, TENSOR ...
 
 #ifdef GGML_CUDA
 #define GGML_USE_CUDA
@@ -45,6 +45,8 @@ Header only file for ggml engine
 #define MAX_INPUT_TENSORS 8
 #define CheckPoint(fmt, arg...) printf("# CheckPoint: %d(%s): " fmt "\n", (int)__LINE__, __FILE__, ##arg)
 
+#include <unordered_map>
+
 // GGML Engine
 struct GGMLEngine {
     // General
@@ -67,6 +69,9 @@ struct GGMLEngine {
 
     // Graph
     void *graph_cpu_buffer = NULL;
+
+    // Output tensors
+    std::unordered_map<char *, TENSOR *> output_tensors = {};
 };
 
 struct GGMLNetwork {
@@ -77,6 +82,7 @@ public:
 
     bool start_engine();
     TENSOR* engine_forward(int argc, TENSOR* argv[]);
+    TENSOR* get_output_tensor(char *name);
     void stop_engine();
 
     virtual void create_weight_tensors(struct ggml_context* ctx) = 0;
@@ -98,8 +104,10 @@ protected:
     bool m_network_init();
     struct ggml_cgraph* m_build_graph(int argc, struct ggml_tensor* argv[]);
     TENSOR* m_compute(int argc, struct ggml_tensor* argv[]);
+    void m_clear_output_tensors();
 };
 
+void *get_cast_data(struct ggml_tensor *x, bool from_backend, ggml_type dtype);
 bool set_tensor_value(struct ggml_tensor* tensor, TENSOR* nt, bool to_backend); // nt -- nimage tensor
 TENSOR* get_tensor_value(struct ggml_tensor* tensor, bool from_backend);
 void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
@@ -115,7 +123,6 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
 
     #include "ggml-cuda.h"
 
-    #include <float.h> // FLT_MAX, FLT_MIN
     #include <thread>
     #include <vector>
 
@@ -126,10 +133,6 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
 
     static bool _data_type_valid(ggml_type dtype);
     static bool _same_data_shape(struct ggml_tensor* tensor, TENSOR* nt);
-
-    // The follwing functions is like ggml_get_f32_1d/ggml_set_f32_1d, but much more general
-    static float _get_f32_from_buffer(void* data, ggml_type dtype, size_t i);
-    static bool _set_f32_to_buffer(void* data, ggml_type dtype, size_t i, float value);
 
     static struct ggml_backend* _device_backend_init(int device, int* ok_device);
     static bool _engine_backend_init(GGMLEngine* eng);
@@ -152,7 +155,7 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
 
     bool GGMLNetwork::start_engine()
     {
-        syslog_info("Start Engine (%s:%s) ...", ENGINE_VERSION, RELEASE_DATE);
+        syslog_info("Start Engine (%s) ...", ENGINE_VERSION);
 
         GGMLEngine* eng = &m_ggml_engine;
 
@@ -172,6 +175,7 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
 
         syslog_info("Stop Engine ...");
         // system("nvidia-smi");
+        m_clear_output_tensors();
 
         // Clean backend
         {
@@ -267,7 +271,7 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
             check_point(eng->backend);
 
             eng->weight_backend_buffer = ggml_backend_alloc_ctx_tensors(eng->weight_context, eng->backend);
-            check_point(eng->weight_backend_buffer != NULL);
+            // check_point(eng->weight_backend_buffer != NULL);
         }
 
         // Set CPU threads ...
@@ -322,7 +326,7 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
     static bool _load_weight_from_gguf(GGMLEngine* eng)
     {
         check_point(eng);
-        if (strlen(eng->model_name) < 1) // Skip no-existed model ...
+        if (strlen(eng->model_name) < 1) // Skip if no-existed model ...
             return false;
 
         int64_t start_time = ggml_time_ms();
@@ -358,7 +362,7 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
         // Network loading weight ...
         {
             size_t prefix_len = strlen(eng->weight_prefix);
-            struct ggml_tensor* destion_tensor = NULL;
+            struct ggml_tensor* d = NULL;
             bool cpu_backend = _backend_is_cpu(eng->backend);
 
             for_each_context_tensor(weight.context)
@@ -369,40 +373,37 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
                 }
 
                 // Real name should be t->name + prefix_len !!!
-                destion_tensor = ggml_get_tensor(eng->weight_context, t->name + prefix_len);
-                if (destion_tensor == NULL) {
+                d = ggml_get_tensor(eng->weight_context, t->name + prefix_len);
+                if (d == NULL) {
                     syslog_debug("Skip '%s' for not defined in network ...", t->name + prefix_len);
                     continue;
                 }
-                if (!ggml_are_same_shape(destion_tensor, t)) {
+                if (!ggml_are_same_shape(d, t)) {
                     syslog_error("%s shape mismatch: got [%ld, %ld, %ld, %ld], expected [%ld, %ld, %ld, %ld]",
-                        destion_tensor->name, t->ne[0], t->ne[1], t->ne[2], t->ne[3], destion_tensor->ne[0],
-                        destion_tensor->ne[1], destion_tensor->ne[2], destion_tensor->ne[3]);
+                        d->name, t->ne[0], t->ne[1], t->ne[2], t->ne[3], d->ne[0],
+                        d->ne[1], d->ne[2], d->ne[3]);
                     continue;
                 }
 
                 // Loading tensors ...
-                if (destion_tensor->type == t->type) { // fast set
+                if (d->type == t->type) { // fast set
                     if (cpu_backend) {
-                        memcpy(destion_tensor->data, t->data, ggml_nbytes(destion_tensor));
+                        memcpy(d->data, t->data, ggml_nbytes(d));
                     } else {
-                        ggml_backend_tensor_set(destion_tensor, t->data, 0, ggml_nbytes(destion_tensor));
+                        ggml_backend_tensor_set(d, t->data, 0, ggml_nbytes(d));
                     }
                 } else { // slow set
-                    void* temp_data = malloc(ggml_nbytes(destion_tensor));
-                    check_point(temp_data);
-                    for (size_t i = 0; i < (size_t)ggml_nelements(destion_tensor); i++) {
-                        float value = ggml_get_f32_1d(t, i);
-                        _set_f32_to_buffer(temp_data, destion_tensor->type, i, value);
-                    }
+                    void *temp_data = get_cast_data(t, false /*from_backend */, d->type);
+                    check_point(temp_data != NULL);                    
+
                     if (cpu_backend) {
-                        memcpy(destion_tensor->data, temp_data, ggml_nbytes(destion_tensor));
+                        memcpy(d->data, temp_data, ggml_nbytes(d));
                     } else {
-                        ggml_backend_tensor_set(destion_tensor, temp_data, 0, ggml_nbytes(destion_tensor));
+                        ggml_backend_tensor_set(d, temp_data, 0, ggml_nbytes(d));
                     }
                     free(temp_data);
                 }
-                syslog_debug("Loading %s ... OK", destion_tensor->name);
+                syslog_debug("Loading %s ... OK", d->name);
             }
         }
 
@@ -432,7 +433,6 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
         }
         CHECK_POINT(m_ggml_engine.graph_cpu_buffer != NULL);
 
-
         struct ggml_init_params params0 = {
             /*.mem_size   =*/buf_size,
             /*.mem_buffer =*/m_ggml_engine.graph_cpu_buffer, 
@@ -445,7 +445,7 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
 
         // struct ggml_cgraph* gf = ggml_new_graph(ctx);
         // struct ggml_cgraph* gf = ggml_new_graph_custom(ctx, 2*GGML_DEFAULT_GRAPH_SIZE, false);
-        struct ggml_cgraph* gf = ggml_new_graph_custom(ctx, this->get_graph_size(), false);
+        struct ggml_cgraph* gf = ggml_new_graph_custom(ctx, this->get_graph_size(), false); // !!!!!!!!!
         CHECK_POINT(gf != NULL);
 
 
@@ -463,6 +463,17 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
         return gf;
     }
 
+    void GGMLNetwork::m_clear_output_tensors()
+    {
+        for (auto& pair : m_ggml_engine.output_tensors) {
+            TENSOR *t =  (TENSOR *)pair.second;
+            if (tensor_valid(t)) {
+                tensor_destroy(t);
+            }
+        }
+        m_ggml_engine.output_tensors.clear();
+    }
+
 
     TENSOR* GGMLNetwork::m_compute(int argc, struct ggml_tensor* argv[])
     {
@@ -475,10 +486,11 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
             ggml_backend_get_default_buffer_type(m_ggml_engine.backend));
         CHECK_POINT(compute_gallocr != NULL);
 
-        // Build graph !!!!!!!!!!!!!
+        // Build graph !!!!!!!!!!!!! {
         struct ggml_cgraph* gf = m_build_graph(argc, argv);
         CHECK_POINT(gf != NULL);
         CHECK_POINT(ggml_gallocr_alloc_graph(compute_gallocr, gf)); 
+        // Build graph !!!!!!!!!!!!! }
 
         // Dump compute buffer size ...
         {
@@ -490,15 +502,40 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
         // Compute ...
         {
             ggml_backend_graph_compute(m_ggml_engine.backend, gf);
+
             // ggml_graph_print(gf);
             struct ggml_tensor* y = gf->nodes[gf->n_nodes - 1];
             CHECK_POINT(y != NULL);
             output = get_tensor_value(y, true /*from_backend*/);
+
+            // Save output tensors
+            for (int i = 0; i < gf->n_leafs; i++) {
+                struct ggml_tensor *leaf = gf->leafs[i];
+                if (leaf->flags & GGML_TENSOR_FLAG_OUTPUT) {
+                    // Saving leafs ...
+                    TENSOR *yt = get_tensor_value(leaf, true /*from_backend*/);
+                    m_ggml_engine.output_tensors[leaf->name] = yt;
+                }
+            }
+            for (int i = 0; i < gf->n_nodes; i++) {
+                struct ggml_tensor *node = gf->nodes[i];
+                if (node->flags & GGML_TENSOR_FLAG_OUTPUT) {
+                    // Saving nodes ...
+                    TENSOR *yt = get_tensor_value(node, true /*from_backend*/);
+                    m_ggml_engine.output_tensors[node->name] = yt;
+                }
+            }
         }
 
         ggml_gallocr_free(compute_gallocr);
         return output;
     }
+
+    TENSOR* GGMLNetwork::get_output_tensor(char *name)
+    {
+        return m_ggml_engine.output_tensors[name];
+    }
+
 
     TENSOR* GGMLNetwork::engine_forward(int argc, TENSOR* argv[])
     {
@@ -507,6 +544,7 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
         CHECK_POINT(argc < MAX_INPUT_TENSORS);
 
         int64_t start_time = ggml_time_ms();
+        m_clear_output_tensors();
 
         // *******************************************************************************
         // Set input data spends less 2ms,
@@ -648,63 +686,6 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
         syslog_info("%s", output_buffer);
     }
 
-    static float _get_f32_from_buffer(void* data, ggml_type dtype, size_t i)
-    {
-        void* base_data = (char*)data + i * ggml_type_size(dtype);
-
-        switch (dtype) {
-        case GGML_TYPE_I8: {
-            return ((int8_t*)base_data)[0];
-        } break;
-        case GGML_TYPE_I16: {
-            return ((int16_t*)base_data)[0];
-        } break;
-        case GGML_TYPE_I32: {
-            return ((int32_t*)base_data)[0];
-        } break;
-        case GGML_TYPE_F16: {
-            return ggml_fp16_to_fp32(((ggml_fp16_t*)base_data)[0]);
-        } break;
-        case GGML_TYPE_F32: {
-            return ((float*)base_data)[0];
-        } break;
-        default: {
-            GGML_ASSERT(false); // Invalid data type.
-        } break;
-        }
-
-        return 0.0f;
-    }
-
-    static bool _set_f32_to_buffer(void* data, ggml_type dtype, size_t i, float value)
-    {
-        void* base_data = (char*)data + i * ggml_type_size(dtype);
-
-        switch (dtype) {
-        case GGML_TYPE_I8: {
-            ((int8_t*)(base_data))[0] = (int8_t)value;
-        } break;
-        case GGML_TYPE_I16: {
-            ((int16_t*)(base_data))[0] = (int16_t)value;
-        } break;
-        case GGML_TYPE_I32: {
-            ((int32_t*)(base_data))[0] = (int32_t)value;
-        } break;
-        case GGML_TYPE_F16: {
-            ((ggml_fp16_t*)(base_data))[0] = ggml_fp32_to_fp16(value);
-        } break;
-        case GGML_TYPE_F32: {
-            ((float*)(base_data))[0] = value;
-        } break;
-        default: {
-            GGML_ASSERT(false); // Invalid data type
-            return false;
-        } break;
-        }
-
-        return true;
-    }
-
     static bool _data_type_valid(ggml_type dtype)
     {
         return (dtype == GGML_TYPE_I8 || dtype == GGML_TYPE_I16 || dtype == GGML_TYPE_I32 || dtype == GGML_TYPE_F16
@@ -731,30 +712,19 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
         CHECK_POINT(tensor);
         CHECK_POINT(_data_type_valid(tensor->type));
 
+        float *source_data = (float *)get_cast_data(tensor, from_backend, GGML_TYPE_F32);
+        CHECK_POINT(source_data);
+
         // B, C, H, W
         TENSOR* nt = tensor_create((int)tensor->ne[3], (int)tensor->ne[2], (int)tensor->ne[1], (int)tensor->ne[0]);
+        if (nt == NULL) {
+            free(source_data);
+        }
         CHECK_TENSOR(nt);
         size_t n = nt->batch * nt->chan * nt->height * nt->width;
+        memcpy(nt->data, source_data, n * sizeof(float)); // Save source data to nt->data
 
-        if (from_backend) {
-            void* source_data = (void*)malloc(ggml_nbytes(tensor));
-            if (!source_data) {
-                tensor_destroy(nt);
-            }
-            CHECK_POINT(source_data);
-
-            ggml_backend_tensor_get(tensor, source_data, 0, ggml_nbytes(tensor));
-
-            for (size_t i = 0; i < n; i++)
-                nt->data[i] = _get_f32_from_buffer(source_data, tensor->type, i);
-
-            free(source_data);
-            return nt;
-        }
-
-        // Case from_backend == false
-        for (size_t i = 0; i < n; i++)
-            nt->data[i] = _get_f32_from_buffer(tensor->data, tensor->type, i);
+        free(source_data);
 
         return nt;
     }
@@ -767,25 +737,95 @@ void dump_ggml_tensor(const char* prefix, struct ggml_tensor* tensor);
         // B, C, H, W
         check_point(_same_data_shape(tensor, nt));
         check_point(_data_type_valid(tensor->type));
+        size_t nb = ggml_nbytes(tensor);
 
-        size_t n = nt->batch * nt->chan * nt->height * nt->width;
-        if (to_backend) {
-            void* destion_data = (void*)malloc(ggml_nbytes(tensor));
-            check_point(destion_data);
-
-            for (size_t i = 0; i < n; i++)
-                _set_f32_to_buffer(destion_data, tensor->type, i, nt->data[i]);
-
-            ggml_backend_tensor_set(tensor, destion_data, 0, ggml_nbytes(tensor));
-            free(destion_data);
+        // 1) NOT convert data format ...
+        if (tensor->type == GGML_TYPE_F32) {
+            if (to_backend) {
+                ggml_backend_tensor_set(tensor, nt->data, 0, nb);
+            } else {
+                memcpy(tensor->data, nt->data, nb);
+            }
             return true;
         }
 
-        // Case to_backend == false
-        for (size_t i = 0; i < n; i++)
-            _set_f32_to_buffer(tensor->data, tensor->type, i, nt->data[i]);
+        // 2) Convert nt->data to tensor->data
+        void *dst_data = (void *)malloc(nb);
+        check_point(dst_data != NULL);
+        {
+            size_t nrows = (size_t)ggml_nrows(tensor);
+            size_t n_per_row = ggml_nelements(tensor)/nrows; // tensor->ne[0]
+            std::vector<float> matrix(n_per_row, 1.0f);  // dummy importance matrix
+            ggml_quantize_chunk(tensor->type, (float *)nt->data, dst_data, 0 /*start*/, nrows, n_per_row, matrix.data());
+        }
+        if (to_backend) {
+            ggml_backend_tensor_set(tensor, dst_data, 0, nb);
+        } else {
+            memcpy(tensor->data, dst_data, nb);
+        }
+        free(dst_data);
 
         return true;
+    }
+
+    void *get_cast_data(struct ggml_tensor *x, bool from_backend, ggml_type dtype)
+    {
+        // Cast type of x to dtype
+        void *backend_data = NULL;
+
+        if (from_backend) {
+            size_t bn = (size_t)ggml_nbytes(x);
+
+            backend_data = (void *)malloc(bn);
+            CHECK_POINT(backend_data != NULL);
+            ggml_backend_tensor_get(x, backend_data, 0, bn);
+        }
+
+        size_t n = ggml_nelements(x);
+        float *float_data = (float *)calloc(n, sizeof(float));
+        CHECK_POINT(float_data != NULL);
+
+        // 1) Dequantize data to float_data
+        if (x->type == GGML_TYPE_F32) {
+            if(from_backend) {
+                memcpy((void *)float_data, (void *)backend_data, n * sizeof(float));
+                free(backend_data);
+            } else {
+                memcpy(float_data, x->data, n * sizeof(float));
+            }
+            return float_data;
+        }
+        {
+            auto qtype = ggml_internal_get_type_traits(x->type);
+            CHECK_POINT(qtype.to_float != NULL);
+            if (from_backend) {
+                qtype.to_float(backend_data, (float *)float_data, n);
+                free(backend_data); // backend_data is useless
+            } else {
+                qtype.to_float(x->data, (float *)float_data, n);
+            }
+        }
+
+        // 2) Quantize float_data to dst_data
+        if (dtype == GGML_TYPE_F32)
+            return float_data;
+
+        void *dst_data = (void *)calloc(n, ggml_type_size(dtype));
+        if (dst_data == NULL) {
+            free(float_data);
+        }
+        CHECK_POINT(dst_data != NULL);
+        {
+            size_t nrows = (size_t)ggml_nrows(x);
+            size_t n_per_row = n/nrows; // x->ne[0]
+
+            std::vector<float> matrix(n_per_row, 1.0f);  // dummy importance matrix
+            ggml_quantize_chunk(dtype, (float *)float_data, dst_data, 0 /*start*/, nrows, n_per_row, matrix.data());
+        }
+
+        free(float_data);
+
+        return dst_data; // need free dst_data
     }
 #endif // GGML_ENGINE_IMPLEMENTATION
 

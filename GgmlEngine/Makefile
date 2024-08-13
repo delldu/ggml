@@ -12,11 +12,9 @@ TARGET := test
 SOURCE := main.cpp
 
 
-RELEASE_DATE := $(shell date '+%Y-%m-%d')
-
-INCS := \
+INCS := -I lib/include \
 		$(shell pkg-config nimage --cflags) \
-		$(shell pkg-config ggml --cflags)
+# 		$(shell pkg-config ggml --cflags)
 
 LIBS := \
 	$(shell pkg-config nimage --libs) \
@@ -34,7 +32,6 @@ LDFLAGS := -fPIC
 #****************************************************************************
 DEFINES  := \
 	-DGGML_CUDA \
-	-DRELEASE_DATE="\"${RELEASE_DATE}\"" \
 	-D_GLIBCXX_USE_CXX11_ABI=1 -std=c++11 -std=gnu++11
 
 CFLAGS   := ${CFLAGS} ${DEFINES}

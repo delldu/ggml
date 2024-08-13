@@ -9,8 +9,6 @@
 
 LIBNAME := libggml_engine
 
-RELEASE_DATE := $(shell date '+%Y-%m-%d')
-
 # Installation related variables and target
 INSTALL_PATH ?= $(shell pkg-config ggml --cflags | sed s/-I//g)
 
@@ -24,7 +22,6 @@ SOURCE :=  \
 
 DEFINES := \
  	-DGGML_CUDA \
-	-DRELEASE_DATE="\"${RELEASE_DATE}\"" \
  	-D_GLIBCXX_USE_CXX11_ABI=1 -std=c++11 -std=gnu++11
 
 

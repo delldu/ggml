@@ -12,10 +12,11 @@
 #include <ggml.h>
 
 
-struct ggml_tensor* ggml_nn_identity(struct ggml_context* ctx, struct ggml_tensor* x)
-{
-    return ggml_dup_inplace(ctx, x);
-}
+
+// struct ggml_tensor* ggml_nn_identity(struct ggml_context* ctx, struct ggml_tensor* x)
+// {
+//     return ggml_dup_inplace(ctx, x);
+// }
 
 struct ggml_tensor* ggml_nn_conv_2d(struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w,
     struct ggml_tensor* b, int s0 = 1, int s1 = 1, int p0 = 0, int p1 = 0, int d0 = 1, int d1 = 1)
@@ -30,14 +31,14 @@ struct ggml_tensor* ggml_nn_conv_2d(struct ggml_context* ctx, struct ggml_tensor
     return x;
 }
 
-struct ggml_tensor* ggml_nn_layer_norm(
-    struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w, struct ggml_tensor* b, float eps = 1e-06f)
-{
-    x = ggml_norm(ctx, x, eps);
-    x = ggml_mul(ctx, x, w);
-    x = ggml_add(ctx, x, b);
-    return x;
-}
+// struct ggml_tensor* ggml_nn_layer_norm(
+//     struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w, struct ggml_tensor* b, float eps = 1e-06f)
+// {
+//     x = ggml_norm(ctx, x, eps);
+//     x = ggml_mul(ctx, x, w);
+//     x = ggml_add(ctx, x, b);
+//     return x;
+// }
 
 struct ggml_tensor* ggml_nn_group_norm(
     struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w, struct ggml_tensor* b, int num_groups = 32)
@@ -53,17 +54,17 @@ struct ggml_tensor* ggml_nn_group_norm(
     return x;
 }
 
-struct ggml_tensor* ggml_nn_group_norm_32(struct ggml_context* ctx, struct ggml_tensor* a)
-{
-    return ggml_group_norm(ctx, a, 32);
-}
+// struct ggml_tensor* ggml_nn_group_norm_32(struct ggml_context* ctx, struct ggml_tensor* a)
+// {
+//     return ggml_group_norm(ctx, a, 32);
+// }
 
-struct ggml_tensor* ggml_nn_linear(
-    struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w, struct ggml_tensor* b)
-{
-    x = ggml_mul_mat(ctx, w, x);
-    x = ggml_add(ctx, x, b);
-    return x;
-}
+// struct ggml_tensor* ggml_nn_linear(
+//     struct ggml_context* ctx, struct ggml_tensor* x, struct ggml_tensor* w, struct ggml_tensor* b)
+// {
+//     x = ggml_mul_mat(ctx, w, x);
+//     x = ggml_add(ctx, x, b);
+//     return x;
+// }
 
 #endif // _GGML_NN_H_

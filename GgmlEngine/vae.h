@@ -6,8 +6,6 @@
 
 /*======= AutoEncoderKL =======*/
 
-// #define VAE_GRAPH_SIZE 10240
-
 struct DownSample {
     // hparams
     int channels;
@@ -348,6 +346,7 @@ struct Encoder : GGMLNetwork {
         char s[512];
         snprintf(s, sizeof(s), "%s%s", prefix, "mid.block_1.");
         mid.block_1.setup_weight_names(s);
+
         snprintf(s, sizeof(s), "%s%s", prefix, "mid.attn_1.");
         mid.attn_1.setup_weight_names(s);
         snprintf(s, sizeof(s), "%s%s", prefix, "mid.block_2.");
