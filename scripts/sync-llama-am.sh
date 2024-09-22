@@ -5,7 +5,7 @@
 # Usage:
 #
 #   $ cd /path/to/ggml
-#   $ ./scripts/sync-llama-am.sh -skip hash0,hash1,hash2...
+#   $ ./scripts/sync-llama-am.sh -skip hash0,hash1,hash2... -C 3
 #
 
 set -e
@@ -25,9 +25,23 @@ lc=$(cat $SRC_GGML/scripts/sync-llama.last)
 echo "Syncing llama.cpp changes since commit $lc"
 
 to_skip=""
-if [ "$1" == "-skip" ]; then
-    to_skip=$2
-fi
+
+# context for git patches in number of lines
+ctx="8"
+
+while [ "$1" != "" ]; do
+    case $1 in
+        -skip )
+            shift
+            to_skip=$1
+            ;;
+        -C )
+            shift
+            ctx=$1
+            ;;
+    esac
+    shift
+done
 
 cd $SRC_LLAMA
 
@@ -52,7 +66,7 @@ while read c; do
         fi
     fi
 
-    git format-patch -k $c~1..$c --stdout -- \
+    git format-patch -U${ctx} -k $c~1..$c --stdout -- \
         ggml/CMakeLists.txt \
         ggml/src/CMakeLists.txt \
         ggml/cmake/FindSIMD.cmake \
@@ -62,8 +76,10 @@ while read c; do
         ggml/src/ggml*.m \
         ggml/src/ggml*.metal \
         ggml/src/ggml*.cu \
+        ggml/src/ggml-cann/* \
         ggml/src/ggml-cuda/* \
         ggml/src/ggml-sycl/* \
+        ggml/src/vulkan-shaders/* \
         ggml/include/ggml*.h \
         tests/test-opt.cpp \
         tests/test-grad0.cpp \
@@ -102,11 +118,14 @@ if [ -f $SRC_GGML/llama-src.patch ]; then
     # ggml/cmake/FindSIMD.cmake -> cmake/FindSIMD.cmake
     #
     # ggml/src/ggml.c              -> src/ggml.c
+    # ggml/src/ggml-aarch64.c      -> src/ggml-aarch64.c
+    # ggml/src/ggml-aarch64.h      -> src/ggml-aarch64.h
     # ggml/src/ggml-alloc.c        -> src/ggml-alloc.c
     # ggml/src/ggml-backend-impl.h -> src/ggml-backend-impl.h
     # ggml/src/ggml-backend.c      -> src/ggml-backend.c
     # ggml/src/ggml-blas.cpp       -> src/ggml-blas.cpp
-    # ggml/src/ggml-blas.h         -> src/ggml-blas.h
+    # ggml/src/ggml-cann/*         -> src/ggml-cann/*
+    # ggml/src/ggml-cann.cpp       -> src/ggml-cann.cpp
     # ggml/src/ggml-common.h       -> src/ggml-common.h
     # ggml/src/ggml-cuda/*         -> src/ggml-cuda/*
     # ggml/src/ggml-cuda.cu        -> src/ggml-cuda.cu
@@ -119,11 +138,13 @@ if [ -f $SRC_GGML/llama-src.patch ]; then
     # ggml/src/ggml-sycl/*         -> src/ggml-sycl/*
     # ggml/src/ggml-sycl.cpp       -> src/ggml-sycl.cpp
     # ggml/src/ggml-vulkan.cpp     -> src/ggml-vulkan.cpp
+    # ggml/src/vulkan-shaders/*    -> src/vulkan-shaders/*
     #
     # ggml/include/ggml.h         -> include/ggml.h
     # ggml/include/ggml-alloc.h   -> include/ggml-alloc.h
     # ggml/include/ggml-backend.h -> include/ggml-backend.h
     # ggml/include/ggml-blas.h    -> include/ggml-blas.h
+    # ggml/include/ggml-cann.h    -> include/ggml-cann.h
     # ggml/include/ggml-cuda.h    -> include/ggml-cuda.h
     # ggml/include/ggml-kompute.h -> include/ggml-kompute.h
     # ggml/include/ggml-metal.h   -> include/ggml-metal.h
@@ -145,11 +166,14 @@ if [ -f $SRC_GGML/llama-src.patch ]; then
         -e 's/\/ggml\/src\/CMakeLists\.txt/\/src\/CMakeLists.txt/g' \
         -e 's/\/ggml\/cmake\/FindSIMD\.cmake/\/cmake\/FindSIMD.cmake/g' \
         -e 's/\/ggml\/src\/ggml\.c/\/src\/ggml.c/g' \
+        -e 's/\/ggml\/src\/ggml-aarch64\.c/\/src\/ggml-aarch64.c/g' \
+        -e 's/\/ggml\/src\/ggml-aarch64\.h/\/src\/ggml-aarch64.h/g' \
         -e 's/\/ggml\/src\/ggml-alloc\.c/\/src\/ggml-alloc.c/g' \
         -e 's/\/ggml\/src\/ggml-backend-impl\.h/\/src\/ggml-backend-impl.h/g' \
         -e 's/\/ggml\/src\/ggml-backend\.c/\/src\/ggml-backend.c/g' \
         -e 's/\/ggml\/src\/ggml-blas\.cpp/\/src\/ggml-blas.cpp/g' \
-        -e 's/\/ggml\/src\/ggml-blas\.h/\/src\/ggml-blas.h/g' \
+        -e 's/\/ggml\/src\/ggml-cann\//\/src\/ggml-cann\//g' \
+        -e 's/\/ggml\/src\/ggml-cann\.cpp/\/src\/ggml-cann.cpp/g' \
         -e 's/\/ggml\/src\/ggml-common\.h/\/src\/ggml-common.h/g' \
         -e 's/\/ggml\/src\/ggml-cuda\//\/src\/ggml-cuda\//g' \
         -e 's/\/ggml\/src\/ggml-cuda\.cu/\/src\/ggml-cuda.cu/g' \
@@ -162,10 +186,12 @@ if [ -f $SRC_GGML/llama-src.patch ]; then
         -e 's/\/ggml\/src\/ggml-sycl\//\/src\/ggml-sycl\//g' \
         -e 's/\/ggml\/src\/ggml-sycl\.cpp/\/src\/ggml-sycl.cpp/g' \
         -e 's/\/ggml\/src\/ggml-vulkan\.cpp/\/src\/ggml-vulkan.cpp/g' \
+        -e 's/\/ggml\/src\/vulkan-shaders\//\/src\/vulkan-shaders\//g' \
         -e 's/\/ggml\/include\/ggml\.h/\/include\/ggml.h/g' \
         -e 's/\/ggml\/include\/ggml-alloc\.h/\/include\/ggml-alloc.h/g' \
         -e 's/\/ggml\/include\/ggml-backend\.h/\/include\/ggml-backend.h/g' \
         -e 's/\/ggml\/include\/ggml-blas\.h/\/include\/ggml-blas.h/g' \
+        -e 's/\/ggml\/include\/ggml-cann\.h/\/include\/ggml-cann.h/g' \
         -e 's/\/ggml\/include\/ggml-cuda\.h/\/include\/ggml-cuda.h/g' \
         -e 's/\/ggml\/include\/ggml-kompute\.h/\/include\/ggml-kompute.h/g' \
         -e 's/\/ggml\/include\/ggml-metal\.h/\/include\/ggml-metal.h/g' \
@@ -182,7 +208,7 @@ if [ -f $SRC_GGML/llama-src.patch ]; then
         > llama-src.patch.tmp
     mv llama-src.patch.tmp llama-src.patch
 
-    git am llama-src.patch
+    git am -C${ctx} llama-src.patch
 
     rm -v $SRC_GGML/llama-src.patch
 fi

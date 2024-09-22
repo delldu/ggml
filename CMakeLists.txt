@@ -56,6 +56,15 @@ else()
     set(GGML_NATIVE_DEFAULT ON)
 endif()
 
+# defaults
+if (NOT GGML_LLAMAFILE_DEFAULT)
+    set(GGML_LLAMAFILE_DEFAULT OFF)
+endif()
+
+if (NOT GGML_CUDA_GRAPHS_DEFAULT)
+    set(GGML_CUDA_GRAPHS_DEFAULT OFF)
+endif()
+
 # general
 option(GGML_STATIC "ggml: static link libraries"         OFF)
 option(GGML_NATIVE "ggml: enable -march=native flag"     ${GGML_NATIVE_DEFAULT})
@@ -110,9 +119,10 @@ option(GGML_ACCELERATE                      "ggml: enable Accelerate framework" 
 option(GGML_BLAS                            "ggml: use BLAS"                                  ${GGML_BLAS_DEFAULT})
 set(GGML_BLAS_VENDOR ${GGML_BLAS_VENDOR_DEFAULT} CACHE STRING
                                             "ggml: BLAS library vendor")
-option(GGML_LLAMAFILE                       "ggml: use ggml SGEMM"                            OFF)
+option(GGML_LLAMAFILE                       "ggml: use LLAMAFILE"                             ${GGML_LLAMAFILE_DEFAULT})
 
 option(GGML_CUDA                            "ggml: use CUDA"                                  OFF)
+option(GGML_MUSA                            "ggml: use MUSA"                                  OFF)
 option(GGML_CUDA_FORCE_DMMV                 "ggml: use dmmv instead of mmvq CUDA kernels"     OFF)
 option(GGML_CUDA_FORCE_MMQ                  "ggml: use mmq kernels instead of cuBLAS"         OFF)
 option(GGML_CUDA_FORCE_CUBLAS               "ggml: always use cuBLAS instead of mmq kernels"  OFF)
@@ -126,15 +136,16 @@ set   (GGML_CUDA_PEER_MAX_BATCH_SIZE "128" CACHE STRING
 option(GGML_CUDA_NO_PEER_COPY               "ggml: do not use peer to peer copies"            OFF)
 option(GGML_CUDA_NO_VMM                     "ggml: do not try to use CUDA VMM"                OFF)
 option(GGML_CUDA_FA_ALL_QUANTS              "ggml: compile all quants for FlashAttention"     OFF)
-option(GGML_CUDA_USE_GRAPHS                 "ggml: use CUDA graphs (llama.cpp only)"          OFF)
+option(GGML_CUDA_GRAPHS                     "ggml: use CUDA graphs (llama.cpp only)"          ${GGML_CUDA_GRAPHS_DEFAULT})
 
-option(GGML_CURL                            "ggml: use libcurl to download model from an URL" OFF)
 option(GGML_HIPBLAS                         "ggml: use hipBLAS"                               OFF)
 option(GGML_HIP_UMA                         "ggml: use HIP unified memory architecture"       OFF)
 option(GGML_VULKAN                          "ggml: use Vulkan"                                OFF)
 option(GGML_VULKAN_CHECK_RESULTS            "ggml: run Vulkan op checks"                      OFF)
 option(GGML_VULKAN_DEBUG                    "ggml: enable Vulkan debug output"                OFF)
 option(GGML_VULKAN_MEMORY_DEBUG             "ggml: enable Vulkan memory debug output"         OFF)
+option(GGML_VULKAN_SHADER_DEBUG_INFO        "ggml: enable Vulkan shader debug info"           OFF)
+option(GGML_VULKAN_PERF                     "ggml: enable Vulkan perf output"                 OFF)
 option(GGML_VULKAN_VALIDATE                 "ggml: enable Vulkan validation"                  OFF)
 option(GGML_VULKAN_RUN_TESTS                "ggml: run Vulkan tests"                          OFF)
 option(GGML_KOMPUTE                         "ggml: use Kompute"                               OFF)
@@ -200,13 +211,20 @@ endif ()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
+# all public headers
 set(GGML_PUBLIC_HEADERS
     include/ggml.h
     include/ggml-alloc.h
     include/ggml-backend.h
-    "${GGML_HEADERS_CUDA}"
-    "${GGML_HEADERS_METAL}"
-    "${GGML_HEADERS_EXTRA}")
+    include/ggml-blas.h
+    include/ggml-cann.h
+    include/ggml-cuda.h
+    include/ggml.h
+    include/ggml-kompute.h
+    include/ggml-metal.h
+    include/ggml-rpc.h
+    include/ggml-sycl.h
+    include/ggml-vulkan.h)
 
 set_target_properties(ggml PROPERTIES PUBLIC_HEADER "${GGML_PUBLIC_HEADERS}")
 #if (GGML_METAL)
