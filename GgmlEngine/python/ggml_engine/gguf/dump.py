@@ -52,7 +52,7 @@ def dump_metadata(reader: GGUFReader, args: argparse.Namespace) -> None:
     print(f'\n* Dumping {len(reader.tensors)} tensor(s)')
     for n, tensor in enumerate(reader.tensors, 1):
         prettydims = ', '.join('{0:5}'.format(d) for d in list(tensor.shape) + [1] * (4 - len(tensor.shape)))
-        print(f'  {n:5}: {tensor.n_elements:10} | {prettydims} | {tensor.tensor_type.name:7} | {tensor.name}')
+        print(f'  {n:5}: {tensor.n_elements:10} | {prettydims} | {tensor.tensor_type.name:7} | {tensor.name} | {len(tensor.name)}')
 
 def dump_metadata_json(reader: GGUFReader, args: argparse.Namespace) -> None:
     import json
