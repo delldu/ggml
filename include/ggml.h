@@ -230,7 +230,7 @@
 #define GGML_MAX_CONTEXTS       64
 #define GGML_MAX_SRC            10
 #ifndef GGML_MAX_NAME
-#define GGML_MAX_NAME           64
+#define GGML_MAX_NAME           128
 #define GGML_MAX_N_THREADS      512
 
 #endif
