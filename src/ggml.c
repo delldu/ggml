@@ -2458,6 +2458,15 @@ inline static void ggml_vec_sqrt_f32 (const int n, float * y, const float * x) {
 inline static void ggml_vec_log_f32  (const int n, float * y, const float * x) { for (int i = 0; i < n; ++i) y[i] = logf(x[i]);  }
 inline static void ggml_vec_sin_f32  (const int n, float * y, const float * x) { for (int i = 0; i < n; ++i) y[i] = sinf(x[i]);  }
 inline static void ggml_vec_cos_f32  (const int n, float * y, const float * x) { for (int i = 0; i < n; ++i) y[i] = cosf(x[i]);  }
+
+inline static void ggml_vec_sin_cos_f32  (const int n, float * y, const float * x) {
+    for (int i = 0; i < n; ++i) y[i] = (i % 2 == 0)? sinf(x[i]) : cosf(x[i]);
+}
+inline static void ggml_vec_cos_sin_f32  (const int n, float * y, const float * x) {
+    for (int i = 0; i < n; ++i) y[i] = (i % 2 == 0)? cosf(x[i]) : sinf(x[i]);
+}
+
+
 inline static void ggml_vec_abs_f32  (const int n, float * y, const float * x) { for (int i = 0; i < n; ++i) y[i] = fabsf(x[i]); }
 inline static void ggml_vec_sgn_f32  (const int n, float * y, const float * x) { for (int i = 0; i < n; ++i) y[i] = (x[i] > 0.f) ? 1.f : ((x[i] < 0.f) ? -1.f : 0.f); }
 inline static void ggml_vec_step_f32 (const int n, float * y, const float * x) { for (int i = 0; i < n; ++i) y[i] = (x[i] > 0.f) ? 1.f : 0.f; }
@@ -2923,6 +2932,8 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "LOG",
     "SIN",
     "COS",
+    "SIN_COS",
+    "COS_SIN",
     "SUM",
     "SUM_ROWS",
     "MEAN",
@@ -3000,7 +3011,7 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "OPT_STEP_ADAMW",
 };
 
-static_assert(GGML_OP_COUNT == 80, "GGML_OP_COUNT != 80");
+static_assert(GGML_OP_COUNT == 83, "GGML_OP_COUNT != 83");
 
 static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "none",
@@ -3017,6 +3028,8 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "log(x)",
     "sin(x)",
     "cos(x)",
+    "sin_cos(x)",
+    "cos_sin(x)",
     "Σx",
     "Σx_k",
     "Σx/n",
@@ -3060,6 +3073,7 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "pool_2d(x)",
     "pool_2d_back(x)",
     "upscale(x)",
+    "shuffle(x)",
     "pad(x)",
     "arange(start, stop, step)",
     "timestep_embedding(timesteps, dim, max_period)",
@@ -3094,7 +3108,7 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "adamw(x)",
 };
 
-static_assert(GGML_OP_COUNT == 80, "GGML_OP_COUNT != 80");
+static_assert(GGML_OP_COUNT == 83, "GGML_OP_COUNT != 83");
 
 static_assert(GGML_OP_POOL_COUNT == 2, "GGML_OP_POOL_COUNT != 2");
 
@@ -3943,6 +3957,9 @@ static struct ggml_tensor * ggml_new_tensor_impl(
     }
 
     struct ggml_object * const obj_new = ggml_new_object(ctx, GGML_OBJECT_TYPE_TENSOR, GGML_TENSOR_SIZE + obj_alloc_size);
+    if (obj_new == NULL) {
+        printf("create new tensor failed: type = %d, ne: %ld x %ld x %ld x %ld", type, ne[0], ne[1], ne[2], ne[3]);
+    }
     GGML_ASSERT(obj_new);
 
     // TODO: for recoverable errors, we would need to free the data allocated from the scratch buffer here
@@ -5115,6 +5132,45 @@ static struct ggml_tensor * ggml_cos_impl(
     return result;
 }
 
+static struct ggml_tensor * ggml_sin_cos_impl(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * a,
+        bool inplace) {
+    bool is_node = false;
+
+    if (!inplace && (a->grad)) {
+        is_node = true;
+    }
+
+    struct ggml_tensor * result = inplace ? ggml_view_tensor(ctx, a) : ggml_dup_tensor(ctx, a);
+
+    result->op   = GGML_OP_SIN_COS;
+    result->grad = is_node ? ggml_dup_tensor(ctx, result) : NULL;
+    result->src[0] = a;
+
+    return result;
+}
+
+static struct ggml_tensor * ggml_cos_sin_impl(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * a,
+        bool inplace) {
+    bool is_node = false;
+
+    if (!inplace && (a->grad)) {
+        is_node = true;
+    }
+
+    struct ggml_tensor * result = inplace ? ggml_view_tensor(ctx, a) : ggml_dup_tensor(ctx, a);
+
+    result->op   = GGML_OP_COS_SIN;
+    result->grad = is_node ? ggml_dup_tensor(ctx, result) : NULL;
+    result->src[0] = a;
+
+    return result;
+}
+
+
 struct ggml_tensor * ggml_cos(
         struct ggml_context * ctx,
         struct ggml_tensor  * a) {
@@ -5126,6 +5182,20 @@ struct ggml_tensor * ggml_cos_inplace(
         struct ggml_tensor  * a) {
     return ggml_cos_impl(ctx, a, true);
 }
+
+struct ggml_tensor * ggml_sin_cos(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * a) {
+    return ggml_sin_cos_impl(ctx, a, false);
+}
+
+struct ggml_tensor * ggml_cos_sin(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * a) {
+    return ggml_cos_sin_impl(ctx, a, false);
+}
+
+
 
 // ggml_sum
 
@@ -7280,6 +7350,33 @@ static struct ggml_tensor * ggml_upscale_impl(
     return result;
 }
 
+// torch convert x from (B, C*r*2, H, W) to (B, C, H*r, W*r)
+static struct ggml_tensor * ggml_shuffle_impl(
+    struct ggml_context * ctx,
+    struct ggml_tensor * a,
+    int ne0,
+    int ne1,
+    int ne2,
+    int ne3) {
+    bool is_node = false;
+
+    if (a->grad) {
+        GGML_ABORT("fatal error"); // TODO: implement backward
+        is_node = true;
+    }
+    GGML_ASSERT(a->ne[3] == ne3); // B
+
+    struct ggml_tensor * result = ggml_new_tensor_4d(ctx, a->type, ne0, ne1, ne2, ne3);
+
+    result->op = GGML_OP_SHUFFLE;
+
+    result->grad = is_node ? ggml_dup_tensor(ctx, result) : NULL;
+    result->src[0] = a;
+
+    return result;
+}
+
+
 struct ggml_tensor * ggml_upscale(
     struct ggml_context * ctx,
     struct ggml_tensor * a,
@@ -7296,6 +7393,15 @@ struct ggml_tensor * ggml_upscale_ext(
     int ne3) {
     return ggml_upscale_impl(ctx, a, ne0, ne1, ne2, ne3);
 }
+
+// torch convert x from (B, C*r*2, H, W) to (B, C, H*r, W*r)
+struct ggml_tensor * ggml_shuffle(
+    struct ggml_context * ctx,
+    struct ggml_tensor * a,
+    int scale_factor) {
+    return ggml_shuffle_impl(ctx, a, a->ne[0] * scale_factor, a->ne[1] * scale_factor, a->ne[2]/scale_factor/scale_factor, a->ne[3]);
+}
+
 
 // ggml_pad
 
@@ -10993,6 +11099,57 @@ static void ggml_compute_forward_cos_f32(
     }
 }
 
+static void ggml_compute_forward_sin_cos_f32(
+        const struct ggml_compute_params * params,
+        struct ggml_tensor * dst) {
+
+    const struct ggml_tensor * src0 = dst->src[0];
+
+    if (params->ith != 0) {
+        return;
+    }
+
+    GGML_ASSERT(ggml_are_same_shape(src0, dst));
+
+    const int n  = ggml_nrows(src0);
+    const int nc = src0->ne[0];
+
+    GGML_ASSERT( dst->nb[0] == sizeof(float));
+    GGML_ASSERT(src0->nb[0] == sizeof(float));
+
+    for (int i = 0; i < n; i++) {
+        ggml_vec_sin_cos_f32(nc,
+                (float *) ((char *) dst->data  + i*( dst->nb[1])),
+                (float *) ((char *) src0->data + i*(src0->nb[1])));
+    }
+}
+
+static void ggml_compute_forward_cos_sin_f32(
+        const struct ggml_compute_params * params,
+        struct ggml_tensor * dst) {
+
+    const struct ggml_tensor * src0 = dst->src[0];
+
+    if (params->ith != 0) {
+        return;
+    }
+
+    GGML_ASSERT(ggml_are_same_shape(src0, dst));
+
+    const int n  = ggml_nrows(src0);
+    const int nc = src0->ne[0];
+
+    GGML_ASSERT( dst->nb[0] == sizeof(float));
+    GGML_ASSERT(src0->nb[0] == sizeof(float));
+
+    for (int i = 0; i < n; i++) {
+        ggml_vec_cos_sin_f32(nc,
+                (float *) ((char *) dst->data  + i*( dst->nb[1])),
+                (float *) ((char *) src0->data + i*(src0->nb[1])));
+    }
+}
+
+
 static void ggml_compute_forward_cos(
         const struct ggml_compute_params * params,
         struct ggml_tensor * dst) {
@@ -11010,6 +11167,43 @@ static void ggml_compute_forward_cos(
             }
     }
 }
+
+static void ggml_compute_forward_sin_cos(
+        const struct ggml_compute_params * params,
+        struct ggml_tensor * dst) {
+
+    const struct ggml_tensor * src0 = dst->src[0];
+
+    switch (src0->type) {
+        case GGML_TYPE_F32:
+            {
+                ggml_compute_forward_sin_cos_f32(params, dst);
+            } break;
+        default:
+            {
+                GGML_ABORT("fatal error");
+            }
+    }
+}
+
+static void ggml_compute_forward_cos_sin(
+        const struct ggml_compute_params * params,
+        struct ggml_tensor * dst) {
+
+    const struct ggml_tensor * src0 = dst->src[0];
+
+    switch (src0->type) {
+        case GGML_TYPE_F32:
+            {
+                ggml_compute_forward_cos_sin_f32(params, dst);
+            } break;
+        default:
+            {
+                GGML_ABORT("fatal error");
+            }
+    }
+}
+
 
 // ggml_compute_forward_sum
 
@@ -15180,6 +15374,9 @@ static void ggml_compute_forward_im2col_f16(
     const struct ggml_tensor * src0 = dst->src[0];
     const struct ggml_tensor * src1 = dst->src[1];
 
+    if (src0->type != GGML_TYPE_F16) {
+        printf("src0->name = %s\n", src0->name);
+    }
     GGML_ASSERT(src0->type == GGML_TYPE_F16);
     GGML_ASSERT(src1->type == GGML_TYPE_F32);
     GGML_ASSERT( dst->type == GGML_TYPE_F16);
@@ -15763,6 +15960,42 @@ static void ggml_compute_forward_upscale_f32(
     }
 }
 
+// pixel shuffle
+static void ggml_compute_forward_shuffle_f32(
+    const struct ggml_compute_params * params,
+    struct ggml_tensor * dst) {
+
+    const struct ggml_tensor * src0 = dst->src[0];
+
+    GGML_ASSERT(src0->type == GGML_TYPE_F32);
+
+    const int ith = params->ith;
+    const int nth = params->nth;
+
+    GGML_TENSOR_UNARY_OP_LOCALS
+
+    const int R = dst->ne[3]/src0->ne[3];
+
+    // TODO: optimize
+    // torch convert x from src0: (B, C*r*2, H, W) to dst: (B, C, H*r, W*r)
+    for (int64_t i3 = 0; i3 < dst->ne[3]; i3++) {
+        const int64_t i03 = i3 / R;
+        for (int64_t i2 = ith; i2 < dst->ne[2]; i2 += nth) {
+            const int64_t i02 = i2 / R;
+            for (int64_t i1 = 0; i1 < dst->ne[1]; i1++) {
+                const int64_t i01 = i1 * R * R + (i2 % R) * R + (i3 % R); // src0->channel !!!
+                for (int64_t i0 = 0; i0 < dst->ne[0]; i0++) {
+                    const int64_t i00 = i0;
+                    const float * x = (float *)((char *) src0->data + i00*nb00 + i01*nb01 + i02*nb02 + i03*nb03);
+                          float * y = (float *)((char *)  dst->data +  i0*nb0  +  i1*nb1  +  i2*nb2  +  i3*nb3);
+                    *y = *x;
+                }
+            }
+        }
+    }
+}
+
+
 static void ggml_compute_forward_upscale(
     const struct ggml_compute_params * params,
     struct ggml_tensor * dst) {
@@ -15773,6 +16006,24 @@ static void ggml_compute_forward_upscale(
         case GGML_TYPE_F32:
             {
                 ggml_compute_forward_upscale_f32(params, dst);
+            } break;
+        default:
+            {
+                GGML_ABORT("fatal error");
+            }
+    }
+}
+
+static void ggml_compute_forward_shuffle(
+    const struct ggml_compute_params * params,
+    struct ggml_tensor * dst) {
+
+    const struct ggml_tensor * src0 = dst->src[0];
+
+    switch (src0->type) {
+        case GGML_TYPE_F32:
+            {
+                ggml_compute_forward_shuffle_f32(params, dst);
             } break;
         default:
             {
@@ -17653,6 +17904,14 @@ static void ggml_compute_forward(struct ggml_compute_params * params, struct ggm
             {
                 ggml_compute_forward_cos(params, tensor);
             } break;
+        case GGML_OP_SIN_COS:
+            {
+                ggml_compute_forward_sin_cos(params, tensor);
+            } break;
+        case GGML_OP_COS_SIN:
+            {
+                ggml_compute_forward_cos_sin(params, tensor);
+            } break;
         case GGML_OP_SUM:
             {
                 ggml_compute_forward_sum(params, tensor);
@@ -17817,6 +18076,11 @@ static void ggml_compute_forward(struct ggml_compute_params * params, struct ggm
             {
                 ggml_compute_forward_upscale(params, tensor);
             } break;
+        case GGML_OP_SHUFFLE:
+            {
+                ggml_compute_forward_shuffle(params, tensor);
+            } break;
+
         case GGML_OP_PAD:
             {
                 ggml_compute_forward_pad(params, tensor);
@@ -18395,15 +18659,25 @@ static void ggml_compute_backward(struct ggml_context * ctx, struct ggml_tensor 
                                 zero_table, acc_table);
                 }
             } break;
-        case GGML_OP_SUM:
+        case GGML_OP_SIN_COS:
             {
                 if (src0->grad) {
                     src0->grad =
-                        ggml_add1_or_set(ctx,
+                        ggml_sub_or_set(ctx,
                                 src0->grad,
-                                tensor->grad,
+                                ggml_mul(ctx,
+                                    tensor->grad,
+                                    ggml_sin(ctx, src0)),
                                 zero_table, acc_table);
                 }
+            } break;
+        case GGML_OP_COS_SIN:
+            {
+                GGML_ABORT("fatal error"); // TODO: implement
+            } break;
+        case GGML_OP_SUM:
+            {
+                GGML_ABORT("fatal error"); // TODO: implement
             } break;
         case GGML_OP_SUM_ROWS:
             {
@@ -19553,6 +19827,8 @@ static int ggml_get_n_tasks(struct ggml_tensor * node, int n_threads) {
         case GGML_OP_LOG:
         case GGML_OP_SIN:
         case GGML_OP_COS:
+        case GGML_OP_SIN_COS:
+        case GGML_OP_COS_SIN:
         case GGML_OP_SUM:
         case GGML_OP_SUM_ROWS:
         case GGML_OP_MEAN:
@@ -19653,6 +19929,7 @@ static int ggml_get_n_tasks(struct ggml_tensor * node, int n_threads) {
                 n_tasks = 1;
             } break;
         case GGML_OP_UPSCALE:
+        case GGML_OP_SHUFFLE:
         case GGML_OP_PAD:
         case GGML_OP_ARANGE:
         case GGML_OP_TIMESTEP_EMBEDDING:
@@ -22773,6 +23050,13 @@ struct gguf_context * gguf_init_from_file(const char * fname, struct gguf_init_p
 
         // create the tensors
         for (uint64_t i = 0; i < ctx->header.n_tensors; ++i) {
+            // Fixed bug: 
+            // n_dims = 0, name = decoder.layers.0.shuf.conv.1.num_batches_tracked
+            if (ctx->infos[i].n_dims == 0) { // Fixed
+                ctx->infos[i].n_dims = 1;
+                ctx->infos[i].ne[0] = 1;
+            }
+
             const int64_t ne[GGML_MAX_DIMS] = {
                 ctx->infos[i].ne[0],
                 ctx->infos[i].ne[1],

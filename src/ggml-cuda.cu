@@ -2259,6 +2259,9 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
         case GGML_OP_UPSCALE:
             ggml_cuda_op_upscale(ctx, dst);
             break;
+        case GGML_OP_SHUFFLE:
+            ggml_cuda_op_shuffle(ctx, dst);
+            break;
         case GGML_OP_PAD:
             ggml_cuda_op_pad(ctx, dst);
             break;
@@ -2302,6 +2305,12 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
             break;
         case GGML_OP_COS:
             ggml_cuda_op_cos(ctx, dst);
+            break;
+        case GGML_OP_SIN_COS:
+            ggml_cuda_op_sin_cos(ctx, dst);
+            break;
+        case GGML_OP_COS_SIN:
+            ggml_cuda_op_cos_sin(ctx, dst);
             break;
         case GGML_OP_CLAMP:
             ggml_cuda_op_clamp(ctx, dst);
@@ -2938,6 +2947,9 @@ GGML_CALL static bool ggml_backend_cuda_supports_op(ggml_backend_t backend, cons
         case GGML_OP_COS:
         case GGML_OP_CLAMP:
             return true;
+        case GGML_OP_SIN_COS:
+        case GGML_OP_COS_SIN:
+            return false;
         case GGML_OP_CONT:
             return op->src[0]->type != GGML_TYPE_BF16;
         case GGML_OP_DIAG_MASK_INF:
@@ -2959,6 +2971,8 @@ GGML_CALL static bool ggml_backend_cuda_supports_op(ggml_backend_t backend, cons
         case GGML_OP_TIMESTEP_EMBEDDING:
         case GGML_OP_LEAKY_RELU:
             return true;
+        case GGML_OP_SHUFFLE:
+            return false;
         case GGML_OP_FLASH_ATTN_EXT:
 #if defined(GGML_USE_HIPBLAS) && defined(__HIP_PLATFORM_AMD__)
             return (op->src[0]->ne[0] == 64 && op->src[1]->type == GGML_TYPE_F16) || op->src[0]->ne[0] == 128;

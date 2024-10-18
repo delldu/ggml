@@ -460,6 +460,8 @@ extern "C" {
         GGML_OP_LOG,
         GGML_OP_SIN,
         GGML_OP_COS,
+        GGML_OP_SIN_COS,
+        GGML_OP_COS_SIN,
         GGML_OP_SUM,
         GGML_OP_SUM_ROWS,
         GGML_OP_MEAN,
@@ -503,6 +505,7 @@ extern "C" {
         GGML_OP_POOL_2D,
         GGML_OP_POOL_2D_BACK,
         GGML_OP_UPSCALE, // nearest interpolate
+        GGML_OP_SHUFFLE, // pixel shuffle
         GGML_OP_PAD,
         GGML_OP_ARANGE,
         GGML_OP_TIMESTEP_EMBEDDING,
@@ -978,6 +981,14 @@ extern "C" {
             struct ggml_tensor  * a);
 
     GGML_API struct ggml_tensor * ggml_cos_inplace(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a);
+
+    GGML_API struct ggml_tensor * ggml_sin_cos(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a);
+
+    GGML_API struct ggml_tensor * ggml_cos_sin(
             struct ggml_context * ctx,
             struct ggml_tensor  * a);
 
@@ -1751,6 +1762,12 @@ extern "C" {
             int                   ne1,
             int                   ne2,
             int                   ne3);
+
+    GGML_API struct ggml_tensor * ggml_shuffle(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            int                   scale_factor);
+
 
     // pad each dimension with zeros: [x, ..., x] -> [x, ..., x, 0, ..., 0]
     GGML_API struct ggml_tensor * ggml_pad(

@@ -673,7 +673,7 @@ struct CLIPTextModel {
     ggml_tensor_t* forward(ggml_context_t* ctx, ggml_tensor_t* input, size_t max_token_idx = 0,
         bool return_pooled = false)
     {
-        auto x = embeddings.forward(ctx, input); // [N, n_token, hidden_size], xxxx_debug
+        auto x = embeddings.forward(ctx, input); // [N, n_token, hidden_size]
         x = encoder.forward(ctx, x, return_pooled ? -1 : clip_skip);
         if (return_pooled) {
             x = final_layer_norm.forward(ctx, x);
