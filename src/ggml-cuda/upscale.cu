@@ -46,13 +46,13 @@ static __global__ void shuffle_f32(const float * x, float * dst,
     dst[index] = *(float *)((char *)x + s3 * nb03 + s2 * nb02 + s1 * nb01 + s0 * nb00);
 }
 
-static __global__ void flip_f32(const float * x, float * dst,
-        const int ne0, const int ne1, const int ne2, const int ne3,
-        const int nb0, const int nb1, const int nb2, const int nb3,
-        const int dim) {
+static __global__ void flip_f32(const float *src, float * dst, const int n,
+        const int ne0, const int ne1, const int ne2, const int ne3, // src, dst share ...
+        const int nb0, const int nb1, const int nb2, const int nb3, // src, dst share ...
+        const int dim0, const int dim1, const int dim2, const int dim3) {
     // xxxx_temp
     int index = threadIdx.x + blockIdx.x * blockDim.x;
-    if (index >= ne0 * ne1 * ne2 * ne3) {
+    if (index >= n) { // n == ne0 * ne1 * ne2 * ne3
         return;
     }
 
@@ -63,12 +63,12 @@ static __global__ void flip_f32(const float * x, float * dst,
     int d3 = (index / (ne0 * ne1 * ne2)) % ne3;
 
     // src index ...
-    int s0 = (dim == 0)? ne0 - 1 - d0 : d0;
-    int s1 = (dim == 1)? ne1 - 1 - d1 : d1;
-    int s2 = (dim == 2)? ne2 - 1 - d2 : d2;
-    int s3 = (dim == 3)? ne3 - 1 - d3 : d3;
+    int s0 = (dim0)? ne0 - 1 - d0 : d0;
+    int s1 = (dim1)? ne1 - 1 - d1 : d1;
+    int s2 = (dim2)? ne2 - 1 - d2 : d2;
+    int s3 = (dim3)? ne3 - 1 - d3 : d3;
 
-    dst[index] = *(float *)((char *)x + s3 * nb3 + s2 * nb2 + s1 * nb1 + s0 * nb0);
+    dst[index] = *(float *)((char *)src + s3 * nb3 + s2 * nb2 + s1 * nb1 + s0 * nb0);
 }
 
 static __global__ void scatter_copy_f32(const float *x, float * dst,
@@ -148,15 +148,14 @@ static void shuffle_f32_cuda(const float * x, float * dst,
     shuffle_f32<<<num_blocks, CUDA_SHUFFLE_BLOCK_SIZE,0,stream>>>(x, dst, nb00, nb01, nb02, nb03, ne10, ne11, ne12, ne13, R);
 }
 
-static void flip_f32_cuda(const float * x, float * dst,
+static void flip_f32_cuda(const float * src, float * dst, const int n,
         const int ne0, const int ne1, const int ne2, const int ne3,
         const int nb0, const int nb1, const int nb2, const int nb3,
-        const int dim,
+        const int dim0, const int dim1, const int dim2, const int dim3,
         cudaStream_t stream) {
-    int num_blocks = (ne0 * ne1 * ne2 * ne3 + CUDA_FLIP_BLOCK_SIZE - 1) / CUDA_FLIP_BLOCK_SIZE;
-
-    flip_f32<<<num_blocks, CUDA_FLIP_BLOCK_SIZE, 0, stream>>>(x, dst, ne0, ne1, ne2, ne3, 
-        nb0, nb1, nb2, nb3, dim);
+    int num_blocks = (n + CUDA_FLIP_BLOCK_SIZE - 1) / CUDA_FLIP_BLOCK_SIZE;
+    flip_f32<<<num_blocks, CUDA_FLIP_BLOCK_SIZE, 0, stream>>>(src, dst, n,
+        ne0, ne1, ne2, ne3, nb0, nb1, nb2, nb3, dim0, dim1, dim2, dim3);
 }
 
 static void scatter_f32_cuda(const float * x0, const float * x1, float * dst,
@@ -214,20 +213,25 @@ void ggml_cuda_op_shuffle(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     shuffle_f32_cuda(src0_d, dst_d, src0->nb[0], src0->nb[1], src0->nb[2], src0->nb[3], dst->ne[0], dst->ne[1], dst->ne[2], dst->ne[3], R, stream);
 }
 
+// dell_xxxx
 void ggml_cuda_op_flip(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     const ggml_tensor * src0 = dst->src[0];
-    const float * src0_d = (const float *)src0->data;
+    const float * src_d = (const float *)src0->data;
     float * dst_d = (float *)dst->data;
     cudaStream_t stream = ctx.stream();
 
     GGML_ASSERT(src0->type == GGML_TYPE_F32);
     GGML_ASSERT( dst->type == GGML_TYPE_F32);
-    const int dim = dst->op_params[0];
+    const int dim0 = dst->op_params[0];
+    const int dim1 = dst->op_params[1];
+    const int dim2 = dst->op_params[2];
+    const int dim3 = dst->op_params[3];
 
-    flip_f32_cuda(src0_d, dst_d, 
+    const int n = ggml_nelements(dst);
+    flip_f32_cuda(src_d, dst_d, n, 
         dst->ne[0], dst->ne[1], dst->ne[2], dst->ne[3], 
         dst->nb[0], dst->nb[1], dst->nb[2], dst->nb[3], 
-        dim, stream);
+        dim0, dim1, dim2, dim3, stream);
 }
 
 // xxxx_debug

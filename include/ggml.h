@@ -1,5 +1,6 @@
 #pragma once
-#define CheckPoint(fmt, arg...) printf("# CheckPoint: %d(%s): " fmt "\n", (int)__LINE__, __FILE__, ##arg)
+// #define CheckPoint(fmt, arg...) printf("# CheckPoint: %d(%s): " fmt "\n", (int)__LINE__, __FILE__, ##arg)
+#define CheckPoint(fmt, ...) printf("# CheckPoint: %d(%s): " fmt "\n", (int)__LINE__, __FILE__, __VA_ARGS__)
 
 //
 // GGML Tensor Library
@@ -992,10 +993,12 @@ extern "C" {
             struct ggml_context * ctx,
             struct ggml_tensor  * a);
 
+    // dell_xxxx
     GGML_API struct ggml_tensor * ggml_sin_cos(
             struct ggml_context * ctx,
             struct ggml_tensor  * a);
 
+    // dell_xxxx
     GGML_API struct ggml_tensor * ggml_cos_sin(
             struct ggml_context * ctx,
             struct ggml_tensor  * a);
@@ -1605,6 +1608,7 @@ extern "C" {
             float                 min,
             float                 max);
 
+    // dell_xxxx
     GGML_API struct ggml_tensor * ggml_constant(
             struct ggml_context * ctx,
             struct ggml_tensor  * a,
@@ -1776,16 +1780,19 @@ extern "C" {
             int                   ne2,
             int                   ne3);
 
+    // dell_xxxx
     GGML_API struct ggml_tensor * ggml_shuffle(
             struct ggml_context * ctx,
             struct ggml_tensor  * a,
             int                   scale_factor);
 
+    // dell_xxxx
     GGML_API struct ggml_tensor * ggml_flip(
         struct ggml_context * ctx,
         struct ggml_tensor * x,
-        int dim);
+        int dim0, int dim1, int dim2, int dim3);
 
+    // dell_xxxx
     GGML_API struct ggml_tensor * ggml_scatter(
         struct ggml_context * ctx,
         struct ggml_tensor * x,
@@ -1795,10 +1802,12 @@ extern "C" {
         int stop,
         int step);
 
+    // dell_xxxx
     GGML_API struct ggml_tensor * ggml_rfft2(
             struct ggml_context * ctx,
             struct ggml_tensor * a);
 
+    // dell_xxxx
     GGML_API struct ggml_tensor * ggml_irfft2(
             struct ggml_context * ctx,
             struct ggml_tensor * a);
@@ -1814,6 +1823,7 @@ extern "C" {
 
     // https://pytorch.org/docs/stable/generated/torch.nn.ReplicationPad2d.html
     // class torch.nn.ReplicationPad2d(padding)
+    // dell_xxxx
     GGML_API struct ggml_tensor * ggml_replication_pad2d(
             struct ggml_context * ctx,
             struct ggml_tensor  * a,
@@ -1822,6 +1832,7 @@ extern "C" {
             int                  top,
             int                  bottom);
 
+    // dell_xxxx
     GGML_API struct ggml_tensor * ggml_deconv_pad2d(
             struct ggml_context * ctx,
             struct ggml_tensor  * a,
