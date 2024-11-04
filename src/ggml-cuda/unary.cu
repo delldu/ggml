@@ -139,26 +139,28 @@ static __global__ void cos_f32(const float * x, float * dst, const int k) {
     dst[i] = cosf(x[i]);
 }
 
-static __global__ void sin_cos_f32(const float * x, float * dst, const int k) {
+static __global__ void sin_cos_f32(const float * x, float * dst, const int k, const int ne0) {
     const int i = blockDim.x*blockIdx.x + threadIdx.x;
 
     if (i >= k) {
         return;
     }
-    if (i % 2 == 0) {
+    int pos = i % ne0;  // ne0 -- W
+    if (pos % 2 == 0) {
         dst[i] = sinf(x[i]);
     } else {
         dst[i] = cosf(x[i]);
     }
 }
 
-static __global__ void cos_sin_f32(const float * x, float * dst, const int k) {
+static __global__ void cos_sin_f32(const float * x, float * dst, const int k, const int ne0) {
     const int i = blockDim.x*blockIdx.x + threadIdx.x;
 
     if (i >= k) {
         return;
     }
-    if (i % 2 == 0) {
+    int pos = i % ne0; // ne0 -- W
+    if (pos % 2 == 0) {
         dst[i] = cosf(x[i]);
     } else {
         dst[i] = sinf(x[i]);
@@ -241,14 +243,14 @@ static void cos_f32_cuda(const float * x, float * dst, const int k, cudaStream_t
     cos_f32<<<num_blocks, CUDA_COS_BLOCK_SIZE, 0, stream>>>(x, dst, k);
 }
 
-static void sin_cos_f32_cuda(const float * x, float * dst, const int k, cudaStream_t stream) {
+static void sin_cos_f32_cuda(const float * x, float * dst, const int k, const int ne0, cudaStream_t stream) {
     const int num_blocks = (k + CUDA_COS_BLOCK_SIZE - 1) / CUDA_COS_BLOCK_SIZE;
-    sin_cos_f32<<<num_blocks, CUDA_COS_BLOCK_SIZE, 0, stream>>>(x, dst, k);
+    sin_cos_f32<<<num_blocks, CUDA_COS_BLOCK_SIZE, 0, stream>>>(x, dst, k, ne0);
 }
 
-static void cos_sin_f32_cuda(const float * x, float * dst, const int k, cudaStream_t stream) {
+static void cos_sin_f32_cuda(const float * x, float * dst, const int k, const int ne0, cudaStream_t stream) {
     const int num_blocks = (k + CUDA_COS_BLOCK_SIZE - 1) / CUDA_COS_BLOCK_SIZE;
-    cos_sin_f32<<<num_blocks, CUDA_COS_BLOCK_SIZE, 0, stream>>>(x, dst, k);
+    cos_sin_f32<<<num_blocks, CUDA_COS_BLOCK_SIZE, 0, stream>>>(x, dst, k, ne0);
 }
 
 
@@ -477,7 +479,7 @@ void ggml_cuda_op_sin_cos(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     GGML_ASSERT(src0->type == GGML_TYPE_F32);
     GGML_ASSERT( dst->type == GGML_TYPE_F32);
 
-    sin_cos_f32_cuda(src0_d, dst_d, ggml_nelements(src0), stream);
+    sin_cos_f32_cuda(src0_d, dst_d, ggml_nelements(src0), (int)src0->ne[0], stream);
 }
 
 
@@ -492,5 +494,5 @@ void ggml_cuda_op_cos_sin(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     GGML_ASSERT(src0->type == GGML_TYPE_F32);
     GGML_ASSERT( dst->type == GGML_TYPE_F32);
 
-    cos_sin_f32_cuda(src0_d, dst_d, ggml_nelements(src0), stream);
+    cos_sin_f32_cuda(src0_d, dst_d, ggml_nelements(src0), (int)src0->ne[0], stream);
 }

@@ -265,6 +265,26 @@ if (GGML_LLAMAFILE)
     set(GGML_SOURCES_LLAMAFILE llamafile/sgemm.cpp)
 endif()
 
+find_package(FFTW3)
+if (FFTW3_FOUND)
+    message(STATUS "FFTW3 package found.")
+
+    message(STATUS "FFTW3 include directories: ${FFTW3_INCLUDE_DIRS}")
+    message(STATUS "FFTW3 include directories: ${FFTW3_LIBRARY_DIRS}")
+
+    list(APPEND GGML_EXTRA_INCLUDES ${FFTW3_INCLUDE_DIRS})
+    list(APPEND GGML_EXTRA_LIBS_PRIVATE ${FFTW3_LIBRARY_DIRS})
+else()
+    message(STATUS "FFTW3 package not found, use default.")
+
+    message(STATUS "FFTW3 include directories: /usr/include/mkl/fftw/")
+    message(STATUS "FFTW3 linking library: /usr/lib/x86_64-linux-gnu/libfftw3f.so.3")
+
+    list(APPEND GGML_EXTRA_INCLUDES     "/usr/include/mkl/fftw/")
+    list(APPEND GGML_EXTRA_LIBS_PRIVATE "/usr/lib/x86_64-linux-gnu/libfftw3f.so.3")
+endif()
+
+
 if (GGML_CUDA)
     cmake_minimum_required(VERSION 3.18)  # for CMAKE_CUDA_ARCHITECTURES
 
@@ -376,14 +396,14 @@ if (GGML_CUDA)
                 if (GGML_MUSA)
                     list(APPEND GGML_EXTRA_LIBS_PRIVATE MUSA::musart_static MUSA::mublas_static)
                 else()
-                    list(APPEND GGML_EXTRA_LIBS_PRIVATE CUDA::cudart_static CUDA::cublas_static CUDA::cublasLt_static)
+                    list(APPEND GGML_EXTRA_LIBS_PRIVATE CUDA::cudart_static CUDA::cublas_static CUDA::cublasLt_static CUDA::cufft_static)
                 endif()
             endif()
         else()
             if (GGML_MUSA)
                 list(APPEND GGML_EXTRA_LIBS_PRIVATE MUSA::musart MUSA::mublas)
             else()
-                list(APPEND GGML_EXTRA_LIBS_PRIVATE CUDA::cudart CUDA::cublas CUDA::cublasLt)
+                list(APPEND GGML_EXTRA_LIBS_PRIVATE CUDA::cudart CUDA::cublas CUDA::cublasLt CUDA::cufft)
             endif()
         endif()
 

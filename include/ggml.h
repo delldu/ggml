@@ -1,4 +1,5 @@
 #pragma once
+#define CheckPoint(fmt, arg...) printf("# CheckPoint: %d(%s): " fmt "\n", (int)__LINE__, __FILE__, ##arg)
 
 //
 // GGML Tensor Library
@@ -497,6 +498,7 @@ extern "C" {
         GGML_OP_ROPE,
         GGML_OP_ROPE_BACK,
         GGML_OP_CLAMP,
+        GGML_OP_CONSTANT,
         GGML_OP_CONV_TRANSPOSE_1D,
         GGML_OP_IM2COL,
         GGML_OP_IM2COL_BACK,
@@ -506,7 +508,13 @@ extern "C" {
         GGML_OP_POOL_2D_BACK,
         GGML_OP_UPSCALE, // nearest interpolate
         GGML_OP_SHUFFLE, // pixel shuffle
+        GGML_OP_FLIP,
+        GGML_OP_SCATTER,
+        GGML_OP_RFFT2, // https://pytorch.org/docs/stable/generated/torch.fft.rfft2.html
+        GGML_OP_IRFFT2, // https://pytorch.org/docs/stable/generated/torch.fft.irfft2.html
         GGML_OP_PAD,
+        GGML_OP_REPLICATION_PAD2D, // torch.nn.ReplicationPad2d
+        GGML_OP_DECONV_PAD2D, // for ConvTranspose2d
         GGML_OP_ARANGE,
         GGML_OP_TIMESTEP_EMBEDDING,
         GGML_OP_ARGSORT,
@@ -1597,6 +1605,11 @@ extern "C" {
             float                 min,
             float                 max);
 
+    GGML_API struct ggml_tensor * ggml_constant(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            float                 value);
+
     // im2col
     // converts data into a format that effectively results in a convolution when combined with matrix multiplication
     GGML_API struct ggml_tensor * ggml_im2col(
@@ -1768,6 +1781,27 @@ extern "C" {
             struct ggml_tensor  * a,
             int                   scale_factor);
 
+    GGML_API struct ggml_tensor * ggml_flip(
+        struct ggml_context * ctx,
+        struct ggml_tensor * x,
+        int dim);
+
+    GGML_API struct ggml_tensor * ggml_scatter(
+        struct ggml_context * ctx,
+        struct ggml_tensor * x,
+        struct ggml_tensor * e,
+        int dim,
+        int start,
+        int stop,
+        int step);
+
+    GGML_API struct ggml_tensor * ggml_rfft2(
+            struct ggml_context * ctx,
+            struct ggml_tensor * a);
+
+    GGML_API struct ggml_tensor * ggml_irfft2(
+            struct ggml_context * ctx,
+            struct ggml_tensor * a);
 
     // pad each dimension with zeros: [x, ..., x] -> [x, ..., x, 0, ..., 0]
     GGML_API struct ggml_tensor * ggml_pad(
@@ -1777,6 +1811,22 @@ extern "C" {
             int                  p1,
             int                  p2,
             int                  p3);
+
+    // https://pytorch.org/docs/stable/generated/torch.nn.ReplicationPad2d.html
+    // class torch.nn.ReplicationPad2d(padding)
+    GGML_API struct ggml_tensor * ggml_replication_pad2d(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            int                  left,
+            int                  right,
+            int                  top,
+            int                  bottom);
+
+    GGML_API struct ggml_tensor * ggml_deconv_pad2d(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            int                  stride);
+
 
     // Ref: https://github.com/CompVis/stable-diffusion/blob/main/ldm/modules/diffusionmodules/util.py#L151
     // timesteps: [N,]

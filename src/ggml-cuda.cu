@@ -2262,8 +2262,26 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
         case GGML_OP_SHUFFLE:
             ggml_cuda_op_shuffle(ctx, dst);
             break;
+        case GGML_OP_FLIP:
+            ggml_cuda_op_flip(ctx, dst);
+            break;
+        case GGML_OP_SCATTER:
+            ggml_cuda_op_scatter(ctx, dst);
+            break;
+        case GGML_OP_RFFT2:
+            ggml_cuda_op_rfft2(ctx, dst);
+            break;
+        case GGML_OP_IRFFT2:
+            ggml_cuda_op_irfft2(ctx, dst);
+            break;
         case GGML_OP_PAD:
             ggml_cuda_op_pad(ctx, dst);
+            break;
+        case GGML_OP_REPLICATION_PAD2D:
+            ggml_cuda_op_replication_pad2d(ctx, dst);
+            break;
+        case GGML_OP_DECONV_PAD2D:
+            ggml_cuda_op_deconv_pad2d(ctx, dst); 
             break;
         case GGML_OP_ARANGE:
             ggml_cuda_op_arange(ctx, dst);
@@ -2315,6 +2333,9 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
         case GGML_OP_CLAMP:
             ggml_cuda_op_clamp(ctx, dst);
             break;
+        case GGML_OP_CONSTANT:
+            ggml_cuda_op_constant(ctx, dst);
+            break;
         case GGML_OP_NONE:
         case GGML_OP_RESHAPE:
         case GGML_OP_VIEW:
@@ -2344,6 +2365,9 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
             break;
         case GGML_OP_SUM_ROWS:
             ggml_cuda_op_sum_rows(ctx, dst);
+            break;
+        case GGML_OP_MEAN:
+            ggml_cuda_op_mean(ctx, dst);
             break;
         case GGML_OP_ARGSORT:
             ggml_cuda_op_argsort(ctx, dst);
@@ -2946,10 +2970,11 @@ GGML_CALL static bool ggml_backend_cuda_supports_op(ggml_backend_t backend, cons
         case GGML_OP_SIN:
         case GGML_OP_COS:
         case GGML_OP_CLAMP:
-            return true;
-        case GGML_OP_SIN_COS:
-        case GGML_OP_COS_SIN:
-            return false;
+        // case GGML_OP_CONSTANT:
+        //     return true;
+        // case GGML_OP_SIN_COS:
+        // case GGML_OP_COS_SIN:
+        //     return false;
         case GGML_OP_CONT:
             return op->src[0]->type != GGML_TYPE_BF16;
         case GGML_OP_DIAG_MASK_INF:
@@ -2966,13 +2991,32 @@ GGML_CALL static bool ggml_backend_cuda_supports_op(ggml_backend_t backend, cons
         case GGML_OP_ACC:
         case GGML_OP_GROUP_NORM:
         case GGML_OP_UPSCALE:
+        // case GGML_OP_SHUFFLE:
+        // case GGML_OP_FLIP:
+        // case GGML_OP_SCATTER:
+        // case GGML_OP_RFFT2:
+        // case GGML_OP_IRFFT2:
+
         case GGML_OP_PAD:
+        // case GGML_OP_REPLICATION_PAD2D:
+        // case GGML_OP_DECONV_PAD2D:
         case GGML_OP_ARANGE:
         case GGML_OP_TIMESTEP_EMBEDDING:
         case GGML_OP_LEAKY_RELU:
             return true;
+
+        case GGML_OP_CONSTANT:
+        case GGML_OP_SIN_COS:
+        case GGML_OP_COS_SIN:
         case GGML_OP_SHUFFLE:
+        case GGML_OP_FLIP:
+        case GGML_OP_SCATTER:
+        case GGML_OP_RFFT2:
+        case GGML_OP_IRFFT2:
+        case GGML_OP_REPLICATION_PAD2D:
+        case GGML_OP_DECONV_PAD2D:
             return false;
+
         case GGML_OP_FLASH_ATTN_EXT:
 #if defined(GGML_USE_HIPBLAS) && defined(__HIP_PLATFORM_AMD__)
             return (op->src[0]->ne[0] == 64 && op->src[1]->type == GGML_TYPE_F16) || op->src[0]->ne[0] == 128;

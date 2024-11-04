@@ -33,10 +33,14 @@ def create_gguf(torch_model, gguf_format, gguf_model, prefix):
 
     gguf_writer = gguf.GGUFWriter(gguf_output_path, gguf_model)
     for k, v in state_dict.items():
-        if v.dim() > 4:
-            v = v.squeeze(4)
-        if v.dim() > 4:
-            v = v.squeeze(0)
+        if not isinstance(v, torch.Tensor):
+            print("v = ", v)
+            continue
+        else:
+            if v.dim() > 4:
+                v = v.squeeze(4)
+            if v.dim() > 4:
+                v = v.squeeze(0)
             
         if gguf_format == "F32":
             gguf_writer.add_tensor(k, v.numpy().astype(np.float32))
