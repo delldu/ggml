@@ -16424,7 +16424,7 @@ static void ggml_compute_forward_scatter_f32(
     }
 }
 
-
+// dell_xxxx
 #include <fftw3.h>
 // Torch Format:
 // RFFT2: Real: (B, C, H, W) --> Complex: (B, C, H, (W/2)+1) --> Real: (B, 2*C, H, (W/2) + 1)
@@ -16434,22 +16434,23 @@ static void ggml_compute_forward_rfft2_f32(
     struct ggml_tensor * dst) {
     int64_t start = ggml_time_ms();
 
-    const struct ggml_tensor * src0 = dst->src[0];
+    const struct ggml_tensor * src = dst->src[0];
 
-    GGML_ASSERT(src0->type == GGML_TYPE_F32);
+    GGML_ASSERT(src->type == GGML_TYPE_F32);
+    GGML_ASSERT(dst->type == GGML_TYPE_F32);
 
     const int ith = params->ith;
     const int nth = params->nth;
 
-    GGML_TENSOR_UNARY_OP_LOCALS
+    // GGML_TENSOR_UNARY_OP_LOCALS
 
-    int W = (int)src0->ne[0];
-    int H = (int)src0->ne[1];
-    int C = (int)src0->ne[2];
-    int B = (int)src0->ne[3];
+    int W = (int)src->ne[0];
+    int H = (int)src->ne[1];
+    int C = (int)src->ne[2];
+    int B = (int)src->ne[3];
     int H2W = (W/2) + 1;
 
-    void *point;
+    char *point;
     float* input_float = (float *) fftwf_malloc(sizeof(float) * H * W);
     fftwf_complex* output_complex = (fftwf_complex *) fftwf_malloc(sizeof(fftwf_complex) * H * H2W);
     fftwf_plan plan = fftwf_plan_dft_r2c_2d(H, W, input_float, output_complex, FFTW_ESTIMATE);
@@ -16460,7 +16461,7 @@ static void ggml_compute_forward_rfft2_f32(
     for (int b = 0; b < B; b++) { // B
         for (int c = 0; c < C; c++) { // C
             // 1) Get input_float from src0 (b, c, H, W)
-            point = (char *) src0->data + c*src0->nb[2] + b*src0->nb[3];
+            point = (char *) src->data + c*src->nb[2] + b*src->nb[3];
             memcpy(input_float, point, H*W*sizeof(float));
 
             // 2) DO fft
@@ -16470,10 +16471,10 @@ static void ggml_compute_forward_rfft2_f32(
             for (int h = 0; h < H; h++) { // H
                 for (int w = 0; w < H2W; w++) { // W
                     point = (char *) dst->data + w*dst->nb[0] + h*dst->nb[1] + (2*c + 0)*dst->nb[2] + b*dst->nb[3];
-                    *(float *)point = output_complex[h * H2W + w][0]; // re
+                    *((float *)point) = output_complex[h * H2W + w][0]; // re
 
                     point = (char *) dst->data + w*dst->nb[0] + h*dst->nb[1] + (2*c + 1)*dst->nb[2] + b*dst->nb[3];
-                    *(float *)point = output_complex[h * H2W + w][1]; // im
+                    *((float *)point) = output_complex[h * H2W + w][1]; // im
                 }
             }
             ; // start next fft ...
@@ -16486,18 +16487,19 @@ static void ggml_compute_forward_rfft2_f32(
     printf("rfft2 spends: %ld\n", ggml_time_ms() - start); // 11 ms
 }
 
+// dell_xxxx
 static void ggml_compute_forward_irfft2_f32(
     const struct ggml_compute_params * params,
     struct ggml_tensor * dst) {
     int64_t start = ggml_time_ms();
 
-    const struct ggml_tensor * src0 = dst->src[0];
+    const struct ggml_tensor * src = dst->src[0];
+    GGML_ASSERT(src->type == GGML_TYPE_F32);
+    GGML_ASSERT(dst->type == GGML_TYPE_F32);
 
-    GGML_ASSERT(src0->type == GGML_TYPE_F32);
-
-    const int ith = params->ith;
-    const int nth = params->nth;
-    GGML_TENSOR_UNARY_OP_LOCALS
+    // const int ith = params->ith;
+    // const int nth = params->nth;
+    // GGML_TENSOR_UNARY_OP_LOCALS
     // Torch format:
     // RFFT2: Real: (B, C, H, W) --> Complex: (B, C, H, (W/2)+1) --> Real: (B, 2*C, H, (W/2) + 1)
     //IRFFT2: Real: (B, 2*C, H, (W/2) + 1) --> Complex: (B, C, H, (W/2)+1) --> Real: (B, C, H, W)
@@ -16513,15 +16515,15 @@ static void ggml_compute_forward_irfft2_f32(
     float* output_float = (float *) fftwf_malloc(sizeof(float) * H * W);
 
     fftwf_plan plan = fftwf_plan_dft_c2r_2d(H, W, input_complex, output_float, FFTW_ESTIMATE);
-    for (int b = 0; b < B; b++) { // B
-        for (int c = 0; c < C; c++) { // C
+    for (int b = 0; b < B; b++) { // B -- dim 3
+        for (int c = 0; c < C; c++) { // C -- dim 2
             // 1) Get input_complex from src (B, 2*C, H, (W/2) + 1)
-            for (int h = 0; h < H; h++) { // H
-                for (int w = 0; w < H2W; w++) { // W
-                    point = (char *) src0->data + w*src0->nb[0] + h*src0->nb[1] + (2*c + 0)*src0->nb[2] + b*src0->nb[3];
+            for (int h = 0; h < H; h++) { // H -- dim 1
+                for (int w = 0; w < H2W; w++) { // W -- dim 0
+                    point = (char *) src->data + w*src->nb[0] + h*src->nb[1] + (2*c + 0)*src->nb[2] + b*src->nb[3];
                     input_complex[h * H2W + w][0] = *(float *)point; // 0 -- re
 
-                    point = (char *) src0->data + w*src0->nb[0] + h*src0->nb[1] + (2*c + 1)*src0->nb[2] + b*src0->nb[3];
+                    point = (char *) src->data + w*src->nb[0] + h*src->nb[1] + (2*c + 1)*src->nb[2] + b*src->nb[3];
                     input_complex[h * H2W + w][1] = *(float *)point; // 1 --- im
                 }
             }

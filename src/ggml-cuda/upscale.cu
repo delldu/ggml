@@ -234,7 +234,7 @@ void ggml_cuda_op_flip(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
         dim0, dim1, dim2, dim3, stream);
 }
 
-// xxxx_debug
+// dell_xxxx
 void ggml_cuda_op_scatter(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     const ggml_tensor * src0 = dst->src[0];
     const float * src0_d = (const float *)src0->data;
@@ -245,6 +245,7 @@ void ggml_cuda_op_scatter(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     cudaStream_t stream = ctx.stream();
 
     GGML_ASSERT(src0->type == GGML_TYPE_F32);
+    GGML_ASSERT(src1->type == GGML_TYPE_F32);
     GGML_ASSERT( dst->type == GGML_TYPE_F32);
 
     const int dim = dst->op_params[0];
@@ -259,15 +260,16 @@ void ggml_cuda_op_scatter(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
         src1->ne[0], src1->ne[1], src1->ne[2], src1->ne[3], 
         dst->ne[0], dst->ne[1], dst->ne[2], dst->ne[3], 
         dst->nb[0], dst->nb[1], dst->nb[2], dst->nb[3], 
-        dim, start, (const int)stop, step, stream);
+        dim, start, stop, step, stream);
 }
 
 
-// xxxx_debug
+// dell_xxxx
 #include <cufft.h>
 
-static __global__ void rfft2_f32_save_output(ggml_tensor * dst, const int b, const int c, const int H, const int W,
-    const cufftComplex *out_complex) {
+static __global__ void rfft2_f32_save_output(float* dst, const int n, 
+    const int d_nb0, const int d_nb1, const int d_nb2, const int d_nb3,
+    const int b, const int c, const int H, const int W, const cufftComplex *out_complex) {
 
     // for (int h = 0; h < H; h++) { // H
     //     for (int w = 0; w < H2W; w++) { // W
@@ -281,53 +283,72 @@ static __global__ void rfft2_f32_save_output(ggml_tensor * dst, const int b, con
     // }
 
     int index = threadIdx.x + blockIdx.x * blockDim.x;
-    int H2W = (W/2) + 1;
-    if (index >= H * H2W) {
+    if (index >= n) { // n -- H * H2W
         return;
     }
+
+    int H2W = (W/2) + 1;
     int h = index/H2W;
     int w = index % H2W;
 
-    float *point  = (float *)((char *) dst->data + w*dst->nb[0] + h*dst->nb[1] + (2*c + 0)*dst->nb[2] + b*dst->nb[3]);
+    float *point  = (float *)((char *) dst + w*d_nb0 + h*d_nb1 + (2*c + 0)*d_nb2 + b*d_nb3);
     *point = out_complex[h * H2W + W].x; // complex-re
-    point  = (float *)((char *) dst->data + w*dst->nb[0] + h*dst->nb[1] + (2*c + 1)*dst->nb[2] + b*dst->nb[3]);
+    point  = (float *)((char *) dst + w*d_nb0 + h*d_nb1 + (2*c + 1)*d_nb2 + b*d_nb3);
     *point = out_complex[h * H2W + W].y; // complex-im
 }
 
 
-// save out_complex to dst
-static void rfft2_f32_cuda_save_output(ggml_tensor * dst, const int b, const int c, const int H, const int W, 
-    const cufftComplex * out_complex, cudaStream_t stream) {
-    int H2W = (W/2) + 1;
-    int num_blocks = (H * H2W + CUDA_RFFT2_BLOCK_SIZE - 1) / CUDA_RFFT2_BLOCK_SIZE;
-    rfft2_f32_save_output<<<num_blocks, CUDA_RFFT2_BLOCK_SIZE, 0, stream>>>(dst, b, c, H, W, out_complex);
+static __global__ void rfft2_f32_get_input(cufftReal *dst, const float *src, const int n) {
+    int index = threadIdx.x + blockIdx.x * blockDim.x;
+    if (index >= n) { // n -- H * W
+        return;
+    }
+    dst[index] = src[index];
 }
 
 
+// Get input_real from src
+static void rfft2_f32_cuda_get_input(cufftReal *dst, const float *src, const int n, cudaStream_t stream) {
+    int num_blocks = (n + CUDA_RFFT2_BLOCK_SIZE - 1) / CUDA_RFFT2_BLOCK_SIZE;
+    rfft2_f32_get_input<<<num_blocks, CUDA_RFFT2_BLOCK_SIZE, 0, stream>>>(dst, src, n);
+}
+
+// Save out_complex to dst
+static void rfft2_f32_cuda_save_output(float* dst, const int n,
+    const int d_nb0, const int d_nb1, const int d_nb2, const int d_nb3, 
+    const int b, const int c, const int H, const int W, 
+    const cufftComplex * out_complex, cudaStream_t stream) {
+    int num_blocks = (n + CUDA_RFFT2_BLOCK_SIZE - 1) / CUDA_RFFT2_BLOCK_SIZE;
+    rfft2_f32_save_output<<<num_blocks, CUDA_RFFT2_BLOCK_SIZE, 0, stream>>>(dst, n, 
+        d_nb0, d_nb1, d_nb2, d_nb3, b, c, H, W, out_complex);
+}
+
+// dell_xxxx
 void ggml_cuda_op_rfft2(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
-    const ggml_tensor * src0 = dst->src[0];
-    // const float * src0_d = (const float *)src0->data;
+    const ggml_tensor * src = dst->src[0];
+    // const float * src_d = (const float *)src->data;
     // float * dst_d = (float *)dst->data;
     cudaStream_t stream = ctx.stream();
 
-    GGML_ASSERT(src0->type == GGML_TYPE_F32);
-    GGML_ASSERT( dst->type == GGML_TYPE_F32);
+    GGML_ASSERT(src->type == GGML_TYPE_F32);
+    GGML_ASSERT(dst->type == GGML_TYPE_F32);
+    GGML_ASSERT(ggml_is_contiguous(src));
+    GGML_ASSERT(ggml_is_contiguous(dst));
 
-    GGML_TENSOR_UNARY_OP_LOCALS
+    // GGML_TENSOR_UNARY_OP_LOCALS
 
-    int W = (int)src0->ne[0];
-    int H = (int)src0->ne[1];
-    int C = (int)src0->ne[2];
-    int B = (int)src0->ne[3];
+    int W = (int)src->ne[0];
+    int H = (int)src->ne[1];
+    int C = (int)src->ne[2];
+    int B = (int)src->ne[3];
     int H2W = (W/2) + 1;
 
+    char *point;
     cufftHandle plan;
     cufftReal *input_real; // H, W
     cufftComplex *output_complex; // H, H2W
-    void *point;
 
     cudaMalloc((void**)&input_real, sizeof(cufftReal)*H*W);
-    CUDA_CHECK(cudaGetLastError());
     cudaMalloc((void**)&output_complex, sizeof(cufftComplex)*H*H2W);
     CUDA_CHECK(cudaGetLastError());
 
@@ -336,40 +357,37 @@ void ggml_cuda_op_rfft2(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
         fprintf(stderr, "CUFFT Error: Unable to create plan\n");
         return;
     }
-    cufftSetStream(plan, stream);
+    // cufftSetStream(plan, stream);
 
     for (int b = 0; b < B; b++) {
         for (int c = 0; c < C; c++) {
             // 1) Get input_float from src0 (b, c, H, W)
-            point = (char *) src0->data + c*src0->nb[2] + b*src0->nb[3];
-            // memcpy(input_float, point, H*W*sizeof(float));
-            CUDA_CHECK(cudaMemcpyAsync(input_real, point, H * W * sizeof(float), cudaMemcpyDeviceToDevice, stream));
-            // CUDA_CHECK(cudaDeviceSynchronize());
-            CUDA_CHECK(cudaGetLastError());
+            point = (char *) src->data + c*src->nb[2] + b*src->nb[3];
+            rfft2_f32_cuda_get_input(input_real, (float *)point, H * W, stream);
 
             // 2) Do fft
             if (cufftExecR2C(plan, input_real, output_complex) != CUFFT_SUCCESS){
                 fprintf(stderr, "CUFFT Error: Unable to execute plan\n");
                 return;
             }
-            // CUDA_CHECK(cudaDeviceSynchronize());
-            CUDA_CHECK(cudaGetLastError());
+            // CUDA_CHECK(cudaGetLastError());
 
             // 3) Save output_complex to dst
-            rfft2_f32_cuda_save_output(dst, b, c, H, W, output_complex, stream);
-            // CUDA_CHECK(cudaDeviceSynchronize());
-            CUDA_CHECK(cudaGetLastError());
+            rfft2_f32_cuda_save_output((float *)dst->data, ggml_nelements(dst),
+                dst->nb[0], dst->nb[1], dst->nb[2], dst->nb[3], b, c, H, W, output_complex, stream);
+            // CUDA_CHECK(cudaGetLastError());
         }
     }
 
     cufftDestroy(plan);
-    CUDA_CHECK(cudaFree(output_complex));
-    CUDA_CHECK(cudaFree(input_real));
+    cudaFree(output_complex);
+    cudaFree(input_real);
 }
 
-
-static __global__ void irfft2_f32_get_input(cufftComplex *input_complex, 
-    const ggml_tensor *src, const int b, const int c, const int H, const int W) {
+// Get input_complex from src
+static __global__ void irfft2_f32_get_input(cufftComplex *input_complex, const int n,
+    const float *src, const int s_nb0, const int s_nb1, const int s_nb2, const int s_nb3, 
+    const int b, const int c, const int H, const int W) {
     // for (int h = 0; h < H; h++) { // H
     //     for (int w = 0; w < H2W; w++) { // W
     //         point = (char *) src0->data + w*src0->nb[0] + h*src0->nb[1] + (2*c + 0)*src0->nb[2] + b*src0->nb[3];
@@ -381,30 +399,31 @@ static __global__ void irfft2_f32_get_input(cufftComplex *input_complex,
     // }
 
     int index = threadIdx.x + blockIdx.x * blockDim.x;
-    int H2W = (W/2) + 1;
-    if (index >= H * H2W) {
+    if (index >= n) { // n -- H * H2W
         return;
     }
+    int H2W = (W/2) + 1;
     int h = index/H2W;
     int w = index % H2W;
 
-    void *point = (char *) src->data + w*src->nb[0] + h*src->nb[1] + (2*c + 0)*src->nb[2] + b*src->nb[3];
+    void *point = (char *) src + w*s_nb0 + h*s_nb1 + (2*c + 0)*s_nb2 + b*s_nb3;
     input_complex[h * H2W + w].x = *(float *)point; //  -- re
 
-    point = (char *) src->data + w*src->nb[0] + h*src->nb[1] + (2*c + 1)*src->nb[2] + b*src->nb[3];
+    point = (char *) src + w*s_nb0 + h*s_nb1 + (2*c + 1)*s_nb2 + b*s_nb3;
     input_complex[h * H2W + w].y = *(float *)point; //  --- im
 }
 
-
-static void irfft2_f32_cuda_get_input(cufftComplex * input_complex,
-    const ggml_tensor * src, const int b, const int c, const int H, const int W, cudaStream_t stream) {
-    int H2W = (W/2) + 1;
-    int num_blocks = (H * H2W + CUDA_RFFT2_BLOCK_SIZE - 1) / CUDA_RFFT2_BLOCK_SIZE;
-    irfft2_f32_get_input<<<num_blocks, CUDA_RFFT2_BLOCK_SIZE, 0, stream>>>(input_complex, src, b, c, H, W);
+// Get input_complex from src
+static void irfft2_f32_cuda_get_input(cufftComplex * input_complex, const int n,
+    const float* src, const int s_nb0, const int s_nb1, const int s_nb2, const int s_nb3,
+    const int b, const int c, const int H, const int W, cudaStream_t stream) {
+    int num_blocks = (n + CUDA_RFFT2_BLOCK_SIZE - 1) / CUDA_RFFT2_BLOCK_SIZE;
+    irfft2_f32_get_input<<<num_blocks, CUDA_RFFT2_BLOCK_SIZE, 0, stream>>>(input_complex, n, 
+       src, s_nb0, s_nb1, s_nb2, s_nb3, b, c, H, W);
 }
 
 
-static __global__ void irfft2_f32_scale_output(cufftReal *output_real, const int H, const int W) {
+static __global__ void irfft2_f32_save_output(float *dst, const cufftReal *output_real, const int H, const int W) {
     // float HxW = (float) H * W;
     // for (int i = 0; i < H * W; i++) {
     //     output_float[i] /= HxW;
@@ -413,28 +432,30 @@ static __global__ void irfft2_f32_scale_output(cufftReal *output_real, const int
     if (index >= H * W) {
         return;
     }
-    output_real[index] /= (float)(H * W);
+    dst[index] = output_real[index]/(float)(H * W);
 }
 
-static void irfft2_f32_cuda_scale_output(cufftReal * output_real, const int H, const int W, cudaStream_t stream) {
+static void irfft2_f32_cuda_scale_output(float *dst, const cufftReal * output_real, const int H, const int W, cudaStream_t stream) {
     int num_blocks = (H * W + CUDA_RFFT2_BLOCK_SIZE - 1) / CUDA_RFFT2_BLOCK_SIZE;
-    irfft2_f32_scale_output<<<num_blocks, CUDA_RFFT2_BLOCK_SIZE, 0, stream>>>(output_real, H, W);
+    irfft2_f32_save_output<<<num_blocks, CUDA_RFFT2_BLOCK_SIZE, 0, stream>>>(dst, output_real, H, W);
 }
 
 
-// xxxx_debug
+// dell_xxxx
 void ggml_cuda_op_irfft2(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
-    const ggml_tensor * src0 = dst->src[0];
+    const ggml_tensor * src = dst->src[0];
     // const float * src0_d = (const float *)src0->data;
     // float * dst_d = (float *)dst->data;
     cudaStream_t stream = ctx.stream();
 
-    GGML_ASSERT(src0->type == GGML_TYPE_F32);
-    GGML_ASSERT( dst->type == GGML_TYPE_F32);
+    GGML_ASSERT(src->type == GGML_TYPE_F32);
+    GGML_ASSERT(dst->type == GGML_TYPE_F32);
+    GGML_ASSERT(ggml_is_contiguous(src));
+    GGML_ASSERT(ggml_is_contiguous(dst));
 
     // const int ith = params->ith;
     // const int nth = params->nth;
-    GGML_TENSOR_UNARY_OP_LOCALS
+    // GGML_TENSOR_UNARY_OP_LOCALS
     // Torch format:
     // RFFT2: Real: (B, C, H, W) --> Complex: (B, C, H, (W/2)+1) --> Real: (B, 2*C, H, (W/2) + 1)
     //IRFFT2: Real: (B, 2*C, H, (W/2) + 1) --> Complex: (B, C, H, (W/2)+1) --> Real: (B, C, H, W)
@@ -445,29 +466,31 @@ void ggml_cuda_op_irfft2(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     int B = (int)dst->ne[3];
     int H2W = (W/2) + 1;
 
+    char *point;
     cufftHandle plan;
     cufftComplex *input_complex; // H, H2W
     cufftReal *output_real; // H, W
 
     cudaMalloc((void**)&input_complex, sizeof(cufftComplex)*H*H2W);
-    CUDA_CHECK(cudaGetLastError());
+    // CUDA_CHECK(cudaGetLastError());
     cudaMalloc((void**)&output_real, sizeof(cufftReal)*H*W);
-    CUDA_CHECK(cudaGetLastError());
+    // CUDA_CHECK(cudaGetLastError());
 
     /* Create a 2D FFT plan. */
     if (cufftPlan2d(&plan, H, W, CUFFT_C2R) != CUFFT_SUCCESS) {
         fprintf(stderr, "CUFFT Error: Unable to create plan\n");
         return;
     }
-    cufftSetStream(plan, stream);
+    // cufftSetStream(plan, stream);
 
     for (int b = 0; b < B; b++) {
         for (int c = 0; c < C; c++) {
             ///////////////////////////////
             // 1) Get input_complex from src (B, 2*C, H, (W/2) + 1)
-            irfft2_f32_cuda_get_input(input_complex, src0, b, c, H, W, stream);
+            irfft2_f32_cuda_get_input(input_complex, H*H2W, 
+                (const float *)src->data, src->nb[0], src->nb[1], src->nb[2], src->nb[3], b, c, H, W, stream);
             // CUDA_CHECK(cudaDeviceSynchronize());
-            CUDA_CHECK(cudaGetLastError());
+            // CUDA_CHECK(cudaGetLastError());
 
             // 2) Do fft
             if (cufftExecC2R(plan, input_complex, output_real) != CUFFT_SUCCESS){
@@ -475,22 +498,17 @@ void ggml_cuda_op_irfft2(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
                 return;
             }
             // CUDA_CHECK(cudaDeviceSynchronize());
-            CUDA_CHECK(cudaGetLastError());
+            // CUDA_CHECK(cudaGetLastError());
 
             // 3) Save output_real to dst
-            irfft2_f32_cuda_scale_output(output_real, H, W, stream);
+            point = (char *) dst->data + c*dst->nb[2] + b*dst->nb[3];
+            irfft2_f32_cuda_scale_output((float *)point, output_real, H, W, stream);
             // CUDA_CHECK(cudaDeviceSynchronize());
-            CUDA_CHECK(cudaGetLastError());
-
-            void *point = (char *) dst->data + c*dst->nb[2] + b*dst->nb[3];
-            // memcpy(point, output_float, H*W*sizeof(float));
-            CUDA_CHECK(cudaMemcpyAsync(point, output_real, H * W * sizeof(float), cudaMemcpyDeviceToDevice, stream));
-            // CUDA_CHECK(cudaDeviceSynchronize());
-            CUDA_CHECK(cudaGetLastError());
+            // CUDA_CHECK(cudaGetLastError());
         }
     }
 
     cufftDestroy(plan);
-    CUDA_CHECK(cudaFree(output_real));
-    CUDA_CHECK(cudaFree(input_complex));
+    cudaFree(output_real);
+    cudaFree(input_complex);
 }
