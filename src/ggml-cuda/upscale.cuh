@@ -11,6 +11,7 @@ void ggml_cuda_op_upscale(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
 void ggml_cuda_op_shuffle(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
 void ggml_cuda_op_flip(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
 void ggml_cuda_op_scatter(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
+void ggml_cuda_op_slice_scatter(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
 void ggml_cuda_op_rfft2(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
 void ggml_cuda_op_irfft2(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
 

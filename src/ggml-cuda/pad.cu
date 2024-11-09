@@ -123,6 +123,8 @@ static void deconv_pad2d_f32_cuda(const float * src, float * dst, const int s_n,
 
     int num_blocks = (d_n + CUDA_PAD_BLOCK_SIZE - 1) / CUDA_PAD_BLOCK_SIZE;
     deconv_pad2d_f32_init<<<num_blocks, CUDA_PAD_BLOCK_SIZE, 0, stream>>>(dst, d_n);
+    CUDA_CHECK(cudaDeviceSynchronize());
+    CUDA_CHECK(cudaGetLastError());
     // ------------------------------------------------------------------------------------
     num_blocks = (s_n + CUDA_PAD_BLOCK_SIZE - 1) / CUDA_PAD_BLOCK_SIZE;
     deconv_pad2d_f32<<<num_blocks, CUDA_PAD_BLOCK_SIZE, 0, stream>>>(src, dst, s_n,

@@ -292,7 +292,7 @@ struct MultiheadAttention {
 // ----------------------------------------------------------------------------------------------------------------------------------------
 // https://paperswithcode.com/method/pixelshuffle
 
-// class torch.nn.PixelShuffle(upscale_factor)[source] -- convert x from (∗,C*r*2, H, W) to (∗, C, H*r, W*r)
+// class torch.nn.PixelShuffle(upscale_factor)[source] -- convert from src(∗,C*r*2, H, W) to dst(∗, C, H*r, W*r)
 
 
 ggml_tensor_t* pixel_shuffle(ggml_context_t *ctx, ggml_tensor_t *x, int upscale_factor);
@@ -319,7 +319,7 @@ struct PixelShuffle {
 
 // ----------------------------------------------------------------------------------------------------------------------------------------
 // https://pytorch.org/docs/stable/generated/torch.nn.PixelUnshuffle.html
-// class torch.nn.PixelUnshuffle(downscale_factor)[source] -- convert x from (∗,C,H×r,W×r) to (∗, C×r2, H, W)
+// class torch.nn.PixelUnshuffle(downscale_factor)[source] -- convert from src(B, C, H×R, W×R) to dst(B, C×R^2, H, W)
 
 ggml_tensor_t* pixel_unshuffle(ggml_context_t *ctx, ggml_tensor_t *x, int downscale_factor);
 

@@ -1,6 +1,5 @@
 #pragma once
-// #define CheckPoint(fmt, arg...) printf("# CheckPoint: %d(%s): " fmt "\n", (int)__LINE__, __FILE__, ##arg)
-#define CheckPoint(fmt, ...) printf("# CheckPoint: %d(%s): " fmt "\n", (int)__LINE__, __FILE__, __VA_ARGS__)
+#define CheckPoint(fmt, arg...) printf("# CheckPoint: %d(%s): " fmt "\n", (int)__LINE__, __FILE__, ##arg)
 
 //
 // GGML Tensor Library
@@ -500,6 +499,7 @@ extern "C" {
         GGML_OP_ROPE_BACK,
         GGML_OP_CLAMP,
         GGML_OP_CONSTANT,
+        GGML_OP_ADD_CONSTANT,
         GGML_OP_CONV_TRANSPOSE_1D,
         GGML_OP_IM2COL,
         GGML_OP_IM2COL_BACK,
@@ -511,6 +511,7 @@ extern "C" {
         GGML_OP_SHUFFLE, // pixel shuffle
         GGML_OP_FLIP,
         GGML_OP_SCATTER,
+        GGML_OP_SLICE_SCATTER,
         GGML_OP_RFFT2, // https://pytorch.org/docs/stable/generated/torch.fft.rfft2.html
         GGML_OP_IRFFT2, // https://pytorch.org/docs/stable/generated/torch.fft.irfft2.html
         GGML_OP_PAD,
@@ -997,9 +998,15 @@ extern "C" {
     GGML_API struct ggml_tensor * ggml_sin_cos(
             struct ggml_context * ctx,
             struct ggml_tensor  * a);
+    GGML_API struct ggml_tensor * ggml_sin_cos_inplace(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a);
 
     // dell_xxxx
     GGML_API struct ggml_tensor * ggml_cos_sin(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a);
+    GGML_API struct ggml_tensor * ggml_cos_sin_inplace(
             struct ggml_context * ctx,
             struct ggml_tensor  * a);
 
@@ -1609,7 +1616,15 @@ extern "C" {
             float                 max);
 
     // dell_xxxx
+    // in-place, returns view(a)
     GGML_API struct ggml_tensor * ggml_constant(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            float                 value);
+
+    // dell_xxxx
+    // in-place, returns view(a)
+    GGML_API struct ggml_tensor * ggml_add_constant(
             struct ggml_context * ctx,
             struct ggml_tensor  * a,
             float                 value);
@@ -1793,7 +1808,15 @@ extern "C" {
         int dim0, int dim1, int dim2, int dim3);
 
     // dell_xxxx
+    // in-place, returns view(x)
     GGML_API struct ggml_tensor * ggml_scatter(
+        struct ggml_context * ctx,
+        struct ggml_tensor * x,
+        int dim,
+        struct ggml_tensor * index);
+
+    // dell_xxxx
+    GGML_API struct ggml_tensor * ggml_slice_scatter(
         struct ggml_context * ctx,
         struct ggml_tensor * x,
         struct ggml_tensor * e,
@@ -2163,8 +2186,11 @@ extern "C" {
 
     GGML_API int                   ggml_graph_size   (struct ggml_cgraph * cgraph);
     GGML_API struct ggml_tensor *  ggml_graph_node   (struct ggml_cgraph * cgraph, int i); // if i < 0, returns nodes[n_nodes + i]
+    GGML_API struct ggml_tensor *  ggml_graph_leaf   (struct ggml_cgraph * cgraph, int i); // if i < 0, returns nodes[n_nodes + i]
+
     GGML_API struct ggml_tensor ** ggml_graph_nodes  (struct ggml_cgraph * cgraph);
     GGML_API int                   ggml_graph_n_nodes(struct ggml_cgraph * cgraph);
+    GGML_API int                   ggml_graph_n_leafs(struct ggml_cgraph * cgraph);
 
     GGML_API void   ggml_graph_add_node(struct ggml_cgraph * cgraph, struct ggml_tensor * tensor);
 

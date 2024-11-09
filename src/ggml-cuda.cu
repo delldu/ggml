@@ -2268,6 +2268,9 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
         case GGML_OP_SCATTER:
             ggml_cuda_op_scatter(ctx, dst);
             break;
+        case GGML_OP_SLICE_SCATTER:
+            ggml_cuda_op_slice_scatter(ctx, dst);
+            break;
         case GGML_OP_RFFT2:
             ggml_cuda_op_rfft2(ctx, dst);
             break;
@@ -2335,6 +2338,9 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
             break;
         case GGML_OP_CONSTANT:
             ggml_cuda_op_constant(ctx, dst);
+            break;
+        case GGML_OP_ADD_CONSTANT:
+            ggml_cuda_op_add_constant(ctx, dst);
             break;
         case GGML_OP_NONE:
         case GGML_OP_RESHAPE:
@@ -2970,11 +2976,6 @@ GGML_CALL static bool ggml_backend_cuda_supports_op(ggml_backend_t backend, cons
         case GGML_OP_SIN:
         case GGML_OP_COS:
         case GGML_OP_CLAMP:
-        // case GGML_OP_CONSTANT:
-        //     return true;
-        // case GGML_OP_SIN_COS:
-        // case GGML_OP_COS_SIN:
-        //     return false;
         case GGML_OP_CONT:
             return op->src[0]->type != GGML_TYPE_BF16;
         case GGML_OP_DIAG_MASK_INF:
@@ -2991,31 +2992,25 @@ GGML_CALL static bool ggml_backend_cuda_supports_op(ggml_backend_t backend, cons
         case GGML_OP_ACC:
         case GGML_OP_GROUP_NORM:
         case GGML_OP_UPSCALE:
-        // case GGML_OP_SHUFFLE:
-        // case GGML_OP_FLIP:
-        // case GGML_OP_SCATTER:
-        // case GGML_OP_RFFT2:
-        // case GGML_OP_IRFFT2:
-
         case GGML_OP_PAD:
-        // case GGML_OP_REPLICATION_PAD2D:
-        // case GGML_OP_DECONV_PAD2D:
         case GGML_OP_ARANGE:
         case GGML_OP_TIMESTEP_EMBEDDING:
         case GGML_OP_LEAKY_RELU:
             return true;
 
         case GGML_OP_CONSTANT:
+        case GGML_OP_ADD_CONSTANT:
         case GGML_OP_SIN_COS:
         case GGML_OP_COS_SIN:
         case GGML_OP_SHUFFLE:
         case GGML_OP_FLIP:
         case GGML_OP_SCATTER:
+        case GGML_OP_SLICE_SCATTER:
         case GGML_OP_RFFT2:
         case GGML_OP_IRFFT2:
         case GGML_OP_REPLICATION_PAD2D:
         case GGML_OP_DECONV_PAD2D:
-            return false;
+            return true;
 
         case GGML_OP_FLASH_ATTN_EXT:
 #if defined(GGML_USE_HIPBLAS) && defined(__HIP_PLATFORM_AMD__)

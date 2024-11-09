@@ -33,6 +33,12 @@ static  __global__ void im2col_kernel(
         const int64_t offset_src = ic * offset_delta + batch * batch_offset;
         dst[offset_dst] = x[offset_src + iih * IW + iiw];
     }
+
+    // if (iih < 0 || iih >= IH || iiw < 0 || iiw >= IW) {
+    //     dst_data[iic*(KH*KW) + ikh*KW + ikw] = 0;
+    // } else {
+    //     dst_data[iic*(KH*KW) + ikh*KW + ikw] = (src_data[iih*IW + iiw]);
+    // }
 }
 
 template <typename T>
