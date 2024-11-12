@@ -7499,10 +7499,11 @@ static struct ggml_tensor * ggml_scatter_impl(
         GGML_ABORT("fatal error"); // TODO: implement backward
         is_node = true;
     }
-    GGML_ASSERT(dim >= 0 && dim < GGML_MAX_DIMS);
+    GGML_ASSERT(dim >= 0 && dim < 2);
     GGML_ASSERT(x->type == GGML_TYPE_F32);
     GGML_ASSERT(index->type == GGML_TYPE_I32);
-    GGML_ASSERT(x->ne[dim] == ggml_nelements(index));
+    GGML_ASSERT(ggml_is_matrix(x));
+    GGML_ASSERT(ggml_is_vector(index));
 
     struct ggml_tensor * result = ggml_view_tensor(ctx, x);
 
@@ -16531,26 +16532,47 @@ static void ggml_compute_forward_scatter_f32(
 
     // GGML_TENSOR_UNARY_OP_LOCALS
     const int dim = ggml_get_op_params_i32(dst, 0);
-    GGML_ASSERT(dim >= 0 && dim < GGML_MAX_DIMS);
-    GGML_ASSERT(dst->ne[dim] == ggml_nelements(src1));
+    GGML_ASSERT(dim >= 0 && dim < 2);
     const int *index = src1->data;
 
     float * y;
     int64_t offset;
-    for (int64_t i0 = 0; i0 < dst->ne[0]; i0++) { // W
+    if (dim == 0) {
+        // skip i0 loop
         for (int64_t i1 = 0; i1 < dst->ne[1]; i1++) { // H
+            int64_t i0 = index[i1];
             for (int64_t i2 = 0; i2 < dst->ne[2]; i2++) { // C
+                offset = i0 * dst->nb[0] + i1 * dst->nb[1] + i2 * dst->nb[2];
                 for (int64_t i3 = 0; i3 < dst->ne[3]; i3++) { // B
-                    offset = ((dim == 0)?index[i0] : i0) * dst->nb[0] 
-                            +((dim == 1)?index[i1] : i1) * dst->nb[1]
-                            +((dim == 2)?index[i2] : i2) * dst->nb[2]
-                            +((dim == 3)?index[i3] : i3) * dst->nb[3];// byte offset
+                    // offset = i0 * dst->nb[0] + i1 * dst->nb[1] + i2 * dst->nb[2] + i3 * dst->nb[3];// byte offset
                     y = (float *)((char *)  dst->data + offset);
                     *y = 1.0;
+                    offset += dst->nb[3];
                 }
             }
         }
+        return;
     }
+
+    // dim == 1
+    if (dim == 1) {
+        // skip i1 loop
+        for (int64_t i0 = 0; i0 < dst->ne[0]; i0++) { // W
+            int64_t i1 = index[i0];
+            for (int64_t i2 = 0; i2 < dst->ne[2]; i2++) { // C
+                offset = i0 * dst->nb[0] + i1 * dst->nb[1] + i2 * dst->nb[2];
+                for (int64_t i3 = 0; i3 < dst->ne[3]; i3++) { // B
+                    // offset = i0 * dst->nb[0] + i1 * dst->nb[1] + i2 * dst->nb[2] + i3 * dst->nb[3];// byte offset
+                    y = (float *)((char *)  dst->data + offset);
+                    *y = 1.0;
+                    offset += dst->nb[3];
+                } // i3
+            } // i2
+        } // i0
+        return;
+    }
+
+    GGML_ASSERT(dim >= 0 && dim < 2);
 }
 
 

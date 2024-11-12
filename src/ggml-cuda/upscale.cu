@@ -56,16 +56,31 @@ static __global__ void scatter_f32(float * dst, const int n,
     }
 
     // src index ...
-    int s0 = k % d_ne0;
-    int s1 = (k / d_ne0) % d_ne1;
-    int s2 = (k / (d_ne0 * d_ne1)) % d_ne2;
-    int s3 = (k / (d_ne0 * d_ne1 * d_ne2)) % d_ne3;
+    // int s0 = k % d_ne0;
+    // int s1 = (k / d_ne0) % d_ne1;
+    // int s2 = (k / (d_ne0 * d_ne1)) % d_ne2;
+    // int s3 = (k / (d_ne0 * d_ne1 * d_ne2)) % d_ne3;
+
+    int s0, s1, s2, s3;
+
+    // GGML_ASSERT(dim >= 0 && dim < 2); // only for dim == 0 || dim == 1
+    if (dim == 0) { // same as d_ne0 === 1
+        s0 = 0;
+        s1 = k % d_ne1;
+        s2 = (k / d_ne1) % d_ne2;
+        s3 = (k / (d_ne1 * d_ne2)) % d_ne3;
+    } else { // dim == 1, same as d_ne1 === 1
+        s0 = k % d_ne0;
+        s1 = 0;
+        s2 = (k / d_ne0) % d_ne2;
+        s3 = (k / (d_ne0 * d_ne2)) % d_ne3;
+    }
 
     // dst index ...
-    int d0 = (dim == 0)? index[s0] : s0;
-    int d1 = (dim == 1)? index[s1] : s1;
-    int d2 = (dim == 2)? index[s2] : s2;
-    int d3 = (dim == 3)? index[s3] : s3;
+    int d0 = (dim == 0)? index[s1] : s0;
+    int d1 = (dim == 1)? index[s0] : s1;
+    int d2 = s2;
+    int d3 = s3;
 
     *(float *)((char *)dst + d3 * d_nb3 + d2 * d_nb2 + d1 * d_nb1 + d0 * d_nb0) = 1.0;
 }
@@ -324,10 +339,13 @@ void ggml_cuda_op_scatter(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     GGML_ASSERT( dst->type == GGML_TYPE_F32);
 
     const int dim = dst->op_params[0];
-    GGML_ASSERT(dst->ne[dim] == ggml_nelements(src1));
+    GGML_ASSERT(dim >= 0 && dim < 2); // only for dim == 0 || dim == 1
     GGML_ASSERT(ggml_is_contiguous(src1));
 
-    scatter_f32_cuda(dst_d, ggml_nelements(dst),
+    int n = (int)ggml_nelements(dst);
+    n /= dst->ne[dim]; // skip dim 0 loop
+
+    scatter_f32_cuda(dst_d, n,
         dst->ne[0], dst->ne[1], dst->ne[2], dst->ne[3], 
         dst->nb[0], dst->nb[1], dst->nb[2], dst->nb[3], 
         dim, src1_d /*index*/, stream);
