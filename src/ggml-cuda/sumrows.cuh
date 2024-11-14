@@ -4,3 +4,4 @@ void sum_rows_f32_cuda(const float * x, float * dst, const int ncols, const int 
 
 void ggml_cuda_op_sum_rows(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
 void ggml_cuda_op_mean(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
+void ggml_cuda_op_cumsum(ggml_backend_cuda_context & ctx, ggml_tensor * dst);

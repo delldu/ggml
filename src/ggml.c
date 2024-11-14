@@ -2936,6 +2936,7 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "COS_SIN",
     "SUM",
     "SUM_ROWS",
+    "CUMSUM",
     "MEAN",
     "ARGMAX",
     "REPEAT",
@@ -3020,7 +3021,7 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "OPT_STEP_ADAMW",
 };
 
-static_assert(GGML_OP_COUNT == 92, "GGML_OP_COUNT != 92");
+static_assert(GGML_OP_COUNT == 93, "GGML_OP_COUNT != 93");
 
 static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "none",
@@ -3041,6 +3042,7 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "cos_sin(x)",
     "Σx",
     "Σx_k",
+    "cumsum(x, dim)",
     "Σx/n",
     "argmax(x)",
     "repeat(x)",
@@ -3126,7 +3128,7 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "adamw(x)",
 };
 
-static_assert(GGML_OP_COUNT == 92, "GGML_OP_COUNT != 92");
+static_assert(GGML_OP_COUNT == 93, "GGML_OP_COUNT != 93");
 
 static_assert(GGML_OP_POOL_COUNT == 2, "GGML_OP_POOL_COUNT != 2");
 
@@ -5273,6 +5275,30 @@ struct ggml_tensor * ggml_sum_rows(
     return result;
 }
 
+// dell_xxxx
+struct ggml_tensor * ggml_cumsum(
+        struct ggml_context * ctx,
+        struct ggml_tensor * a,
+        int dim) {
+    GGML_ASSERT(dim == 0 || dim == 1);
+
+    bool is_node = false;
+
+    if (a->grad) {
+        is_node = true;
+    }
+
+    struct ggml_tensor * result = ggml_dup_tensor(ctx, a);
+    ggml_set_op_params_i32(result, 0, dim);
+
+    result->op   = GGML_OP_CUMSUM;
+    result->grad = is_node ? ggml_dup_tensor(ctx, result) : NULL;
+    result->src[0] = a;
+
+    return result;
+}
+
+
 // ggml_mean
 
 struct ggml_tensor * ggml_mean(
@@ -7140,6 +7166,10 @@ struct ggml_tensor * ggml_im2col(
     enum ggml_type       dst_type) {
 
     if(is_2D) {
+        if (a->ne[2] != b->ne[2]) {
+            printf("a->name = %s, a->ne[2] = %ld, b->name = %s, b->ne[2] = %ld\n", 
+                a->name, a->ne[2], b->name, b->ne[2]);
+        }
         GGML_ASSERT(a->ne[2] == b->ne[2]);
     } else {
         GGML_ASSERT(a->ne[1] == b->ne[1]);
@@ -11690,6 +11720,60 @@ static void ggml_compute_forward_sum_rows_f32(
     }
 }
 
+// dell_xxxx
+static void ggml_compute_forward_cumsum_f32(
+        const struct ggml_compute_params * params,
+        struct ggml_tensor * dst) {
+
+    const struct ggml_tensor * src = dst->src[0];
+    const int dim = ggml_get_op_params_i32(dst, 0);
+
+    if (params->ith != 0) {
+        CheckPoint("Skip cumsum ...");
+        return;
+    }
+    float sum;
+    int64_t offset;
+
+    // offset = i0*src->nb[0] + i1*src->nb[1] + i2*src->nb[2] + i3*src->nb[3];
+    if (dim == 0) {
+        for (int64_t i3 = 0; i3 < dst->ne[3]; i3++) {
+            for (int64_t i2 = 0; i2 < dst->ne[2]; i2++) {
+                for (int64_t i1 = 0; i1 < dst->ne[1]; i1++) {
+                    sum = 0.0;
+                    offset = i1*src->nb[1] + i2*src->nb[2] + i3*src->nb[3];
+                    for (int64_t i0 = 0; i0 < dst->ne[0]; i0++) {
+                        sum += *(float *) ((char *) src->data + offset);
+                        *(float *)((char *) dst->data + offset) = sum; // Save
+                        offset += src->nb[0];
+                    } // i0
+                } // i1
+            } // i2
+        } // i3
+        return ;
+    }
+
+    if (dim == 1) {
+        for (int64_t i3 = 0; i3 < dst->ne[3]; i3++) {
+            for (int64_t i2 = 0; i2 < dst->ne[2]; i2++) {
+                for (int64_t i0 = 0; i0 < dst->ne[0]; i0++) {
+                    sum = 0.0;
+                    offset = i0*src->nb[0] + i2*src->nb[2] + i3*src->nb[3];
+                    for (int64_t i1 = 0; i1 < dst->ne[1]; i1++) {
+                        sum += *(float *) ((char *) src->data + offset);
+                        *(float *) ((char *) dst->data + offset) = sum; // Save
+                        offset += src->nb[1];
+                    } // i0
+                } // i1
+            } // i2
+        } // i3
+        return ;
+    }
+
+    GGML_ASSERT(dim == 0 || dim == 1);
+}
+
+
 static void ggml_compute_forward_sum_rows(
         const struct ggml_compute_params * params,
         struct ggml_tensor * dst) {
@@ -11700,6 +11784,24 @@ static void ggml_compute_forward_sum_rows(
         case GGML_TYPE_F32:
             {
                 ggml_compute_forward_sum_rows_f32(params, dst);
+            } break;
+        default:
+            {
+                GGML_ABORT("fatal error");
+            }
+    }
+}
+
+static void ggml_compute_forward_cumsum(
+        const struct ggml_compute_params * params,
+        struct ggml_tensor * dst) {
+
+    const struct ggml_tensor * src0 = dst->src[0];
+
+    switch (src0->type) {
+        case GGML_TYPE_F32:
+            {
+                ggml_compute_forward_cumsum_f32(params, dst);
             } break;
         default:
             {
@@ -16453,8 +16555,13 @@ static void ggml_compute_forward_flip_f32_16(
     const struct ggml_tensor * src = dst->src[0];
     GGML_ASSERT(src->type == dst->type);
 
-    // const int ith = params->ith;
+    const int ith = params->ith;
     // const int nth = params->nth;
+
+    if (params->ith != 0) {
+        CheckPoint("Skip flip ...");
+        return;
+    }
 
     // GGML_TENSOR_UNARY_OP_LOCALS
     const int dim0 = ggml_get_op_params_i32(dst, 0);
@@ -18904,6 +19011,12 @@ static void ggml_compute_forward(struct ggml_compute_params * params, struct ggm
             {
                 ggml_compute_forward_sum_rows(params, tensor);
             } break;
+
+        case GGML_OP_CUMSUM:
+            {
+                ggml_compute_forward_cumsum(params, tensor);
+            } break;
+
         case GGML_OP_MEAN:
             {
                 ggml_compute_forward_mean(params, tensor);
@@ -19710,6 +19823,10 @@ static void ggml_compute_backward(struct ggml_context * ctx, struct ggml_tensor 
                                 zero_table, acc_table);
                 }
             } break;
+        case GGML_OP_CUMSUM:
+            {
+                GGML_ABORT("fatal error"); // TODO: implement
+            } break;            
         case GGML_OP_MEAN:
         case GGML_OP_ARGMAX:
             {
@@ -20905,6 +21022,7 @@ static int ggml_get_n_tasks(struct ggml_tensor * node, int n_threads) {
         case GGML_OP_COS_SIN:
         case GGML_OP_SUM:
         case GGML_OP_SUM_ROWS:
+        case GGML_OP_CUMSUM:
         case GGML_OP_MEAN:
         case GGML_OP_ARGMAX:
         case GGML_OP_REPEAT:
