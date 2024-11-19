@@ -466,6 +466,7 @@ extern "C" {
         GGML_OP_SUM,
         GGML_OP_SUM_ROWS,
         GGML_OP_CUMSUM,
+        GGML_OP_NORM2,
         GGML_OP_MEAN,
         GGML_OP_ARGMAX,
         GGML_OP_REPEAT,
@@ -509,6 +510,7 @@ extern "C" {
         GGML_OP_POOL_2D,
         GGML_OP_POOL_2D_BACK,
         GGML_OP_UPSCALE, // nearest interpolate
+        GGML_OP_INTERPOLATE, // line interpolate
         GGML_OP_SHUFFLE, // pixel shuffle
         GGML_OP_FLIP,
         GGML_OP_SCATTER,
@@ -1021,10 +1023,17 @@ extern "C" {
             struct ggml_context * ctx,
             struct ggml_tensor  * a);
 
+    // dell_xxxx
     GGML_API struct ggml_tensor * ggml_cumsum(
             struct ggml_context * ctx,
             struct ggml_tensor *  a,
             int                   dim);
+
+    GGML_API struct ggml_tensor * ggml_norm2(
+            struct ggml_context * ctx,
+            struct ggml_tensor *  a,
+            int                   dim);
+
 
     // mean along rows
     GGML_API struct ggml_tensor * ggml_mean(
@@ -1800,6 +1809,14 @@ extern "C" {
             int                   ne1,
             int                   ne2,
             int                   ne3);
+
+    // dell_xxxx
+    GGML_API struct ggml_tensor * ggml_interpolate(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            int                   dim,
+            int                   ns); // new size
+
 
     // dell_xxxx
     GGML_API struct ggml_tensor * ggml_shuffle(

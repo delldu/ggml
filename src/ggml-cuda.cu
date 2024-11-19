@@ -2259,6 +2259,9 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
         case GGML_OP_UPSCALE:
             ggml_cuda_op_upscale(ctx, dst);
             break;
+        case GGML_OP_INTERPOLATE:
+            ggml_cuda_op_interpolate(ctx, dst);
+            break;
         case GGML_OP_SHUFFLE:
             ggml_cuda_op_shuffle(ctx, dst);
             break;
@@ -2374,6 +2377,9 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
             break;
         case GGML_OP_CUMSUM:
             ggml_cuda_op_cumsum(ctx, dst);
+            break;
+        case GGML_OP_NORM2:
+            ggml_cuda_op_norm2(ctx, dst);
             break;
         case GGML_OP_MEAN:
             ggml_cuda_op_mean(ctx, dst);
@@ -2995,6 +3001,7 @@ GGML_CALL static bool ggml_backend_cuda_supports_op(ggml_backend_t backend, cons
         case GGML_OP_ACC:
         case GGML_OP_GROUP_NORM:
         case GGML_OP_UPSCALE:
+        case GGML_OP_INTERPOLATE:
         case GGML_OP_PAD:
         case GGML_OP_ARANGE:
         case GGML_OP_TIMESTEP_EMBEDDING:

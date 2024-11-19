@@ -323,8 +323,8 @@ struct {{class_name}} {
         {{create_source_code}}
     }
 
-    void setup_weight_names(char *prefix) {
-        char s[512];
+    void setup_weight_names(const char *prefix) {
+        char s[GGML_MAX_NAME];
         {{setup_source_code}}
     }
 
