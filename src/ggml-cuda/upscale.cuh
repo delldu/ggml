@@ -15,3 +15,5 @@ void ggml_cuda_op_slice_scatter(ggml_backend_cuda_context & ctx, ggml_tensor * d
 void ggml_cuda_op_rfft2(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
 void ggml_cuda_op_irfft2(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
 
+void ggml_cuda_op_win_part(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
+void ggml_cuda_op_win_unpart(ggml_backend_cuda_context & ctx, ggml_tensor * dst);

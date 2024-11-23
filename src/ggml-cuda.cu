@@ -1403,7 +1403,8 @@ static void ggml_cuda_op_mul_mat(
     const int64_t ne13 = src1->ne[3];
     const int64_t nrows1 = ggml_nrows(src1);
 
-    GGML_ASSERT(ne03 == ne13);
+    // dell_xxxx !!!
+    // GGML_ASSERT(ne03 == ne13);
 
     const int64_t ne0 = dst->ne[0];
     const int64_t ne1 = dst->ne[1];
@@ -2302,12 +2303,14 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
             ggml_cuda_op_rms_norm(ctx, dst);
             break;
         case GGML_OP_MUL_MAT:
-            if (dst->src[0]->ne[3] != dst->src[1]->ne[3]) {
-                GGML_CUDA_LOG_ERROR("%s: cannot compute %s: src0->ne[3] = %" PRId64 ", src1->ne[3] = %" PRId64 " - fallback to CPU\n", __func__, dst->name, dst->src[0]->ne[3], dst->src[1]->ne[3]);
-                return false;
-            } else {
-                ggml_cuda_mul_mat(ctx, dst->src[0], dst->src[1], dst);
-            }
+            // dell_xxxx !!!
+            // if (dst->src[0]->ne[3] != dst->src[1]->ne[3]) {
+            //     GGML_CUDA_LOG_ERROR("%s: cannot compute %s: src0->ne[3] = %" PRId64 ", src1->ne[3] = %" PRId64 " - fallback to CPU\n", __func__, dst->name, dst->src[0]->ne[3], dst->src[1]->ne[3]);
+            //     return false;
+            // } else {
+            //     ggml_cuda_mul_mat(ctx, dst->src[0], dst->src[1], dst);
+            // }
+            ggml_cuda_mul_mat(ctx, dst->src[0], dst->src[1], dst);
             break;
         case GGML_OP_MUL_MAT_ID:
             ggml_cuda_mul_mat_id(ctx, dst);
@@ -2360,6 +2363,15 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
         case GGML_OP_ROPE:
             ggml_cuda_op_rope(ctx, dst);
             break;
+        case GGML_OP_GET_REL_POS:
+            ggml_cuda_op_get_rel_pos(ctx, dst);
+            break;
+        case GGML_OP_WIN_PART:
+            ggml_cuda_op_win_part(ctx, dst);
+            break;
+        case GGML_OP_WIN_UNPART:
+            ggml_cuda_op_win_unpart(ctx, dst);
+            break;
         case GGML_OP_IM2COL:
             ggml_cuda_op_im2col(ctx, dst);
             break;
@@ -2383,6 +2395,9 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
             break;
         case GGML_OP_MEAN:
             ggml_cuda_op_mean(ctx, dst);
+            break;
+        case GGML_OP_ARGMAX_EXT:
+            ggml_cuda_op_argmax_ext(ctx, dst);
             break;
         case GGML_OP_ARGSORT:
             ggml_cuda_op_argsort(ctx, dst);
@@ -2830,6 +2845,7 @@ GGML_CALL static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t
     return GGML_STATUS_SUCCESS;
 }
 
+// dell_xxxx
 GGML_CALL static bool ggml_backend_cuda_supports_op(ggml_backend_t backend, const ggml_tensor * op) {
     ggml_backend_cuda_context * cuda_ctx = (ggml_backend_cuda_context *) backend->context;
     switch (op->op) {
@@ -2856,9 +2872,11 @@ GGML_CALL static bool ggml_backend_cuda_supports_op(ggml_backend_t backend, cons
                 struct ggml_tensor * a = op->src[0];
                 struct ggml_tensor * b = op->src[1];
                 if (b->type == GGML_TYPE_F16 && a->type != GGML_TYPE_F16) {
+                    CheckPoint("b->type == GGML_TYPE_F16 && a->type != GGML_TYPE_F16");
                     return false;
                 }
                 if (op->op == GGML_OP_MUL_MAT && a->ne[3] != b->ne[3]) {
+                    CheckPoint("op->op == GGML_OP_MUL_MAT && a->ne[3] != b->ne[3]");
                     return false;
                 }
                 switch (a->type) {
@@ -2886,6 +2904,7 @@ GGML_CALL static bool ggml_backend_cuda_supports_op(ggml_backend_t backend, cons
                     case GGML_TYPE_IQ4_XS:
                         return true;
                     default:
+                        CheckPoint("a->name = %s, a->type = ?", a->name);
                         return false;
                 }
             } break;
@@ -2992,6 +3011,10 @@ GGML_CALL static bool ggml_backend_cuda_supports_op(ggml_backend_t backend, cons
             return true;
         case GGML_OP_ROPE:
             return ggml_is_contiguous(op->src[0]);
+        case GGML_OP_GET_REL_POS:
+        case GGML_OP_WIN_PART:
+        case GGML_OP_WIN_UNPART:
+            return true;
         case GGML_OP_IM2COL:
             return op->src[0]->type == GGML_TYPE_F16;
         case GGML_OP_POOL_2D:

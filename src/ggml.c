@@ -2940,6 +2940,7 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "NORM2",
     "MEAN",
     "ARGMAX",
+    "ARGMAX_EXT",
     "REPEAT",
     "REPEAT_BACK",
     "CONCAT",
@@ -2948,11 +2949,9 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "RMS_NORM",
     "RMS_NORM_BACK",
     "GROUP_NORM",
-
     "MUL_MAT",
     "MUL_MAT_ID",
     "OUT_PROD",
-
     "SCALE",
     "SET",
     "CPY",
@@ -2994,7 +2993,6 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "TIMESTEP_EMBEDDING",
     "ARGSORT",
     "LEAKY_RELU",
-
     "FLASH_ATTN_EXT",
     "FLASH_ATTN_BACK",
     "SSM_CONV",
@@ -3004,30 +3002,24 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "GET_REL_POS",
     "ADD_REL_POS",
     "RWKV_WKV",
-
     "UNARY",
-
     "MAP_UNARY",
     "MAP_BINARY",
-
     "MAP_CUSTOM1_F32",
     "MAP_CUSTOM2_F32",
     "MAP_CUSTOM3_F32",
-
     "MAP_CUSTOM1",
     "MAP_CUSTOM2",
     "MAP_CUSTOM3",
-
     "CROSS_ENTROPY_LOSS",
     "CROSS_ENTROPY_LOSS_BACK",
     "OPT_STEP_ADAMW",
 };
 
-static_assert(GGML_OP_COUNT == 95, "GGML_OP_COUNT != 95");
+static_assert(GGML_OP_COUNT == 96, "GGML_OP_COUNT != 96");
 
 static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "none",
-
     "x",
     "x+y",
     "x+y",
@@ -3048,6 +3040,7 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "norm2(x, dim)",
     "Σx/n",
     "argmax(x)",
+    "argmax_ext(x, dim)",
     "repeat(x)",
     "repeat_back(x)",
     "concat(x, y)",
@@ -3056,11 +3049,9 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "rms_norm(x)",
     "rms_norm_back(x)",
     "group_norm(x)",
-
     "X*Y",
     "X[i]*Y",
     "X*Y",
-
     "x*v",
     "y-\\>view(x)",
     "x-\\>y",
@@ -3103,7 +3094,6 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "timestep_embedding(timesteps, dim, max_period)",
     "argsort(x)",
     "leaky_relu(x)",
-
     "flash_attn_ext(x)",
     "flash_attn_back(x)",
     "ssm_conv(x)",
@@ -3113,26 +3103,21 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "get_rel_pos(x)",
     "add_rel_pos(x)",
     "rwkv_wkv(k, v, r, tf, td, s)",
-
     "unary(x)",
-
     "f(x)",
     "f(x,y)",
-
     "custom_f32(x)",
     "custom_f32(x,y)",
     "custom_f32(x,y,z)",
-
     "custom(x)",
     "custom(x,y)",
     "custom(x,y,z)",
-
     "cross_entropy_loss(x,y)",
     "cross_entropy_loss_back(x,y)",
     "adamw(x)",
 };
 
-static_assert(GGML_OP_COUNT == 95, "GGML_OP_COUNT != 95");
+static_assert(GGML_OP_COUNT == 96, "GGML_OP_COUNT != 96");
 
 static_assert(GGML_OP_POOL_COUNT == 2, "GGML_OP_POOL_COUNT != 2");
 
@@ -5372,6 +5357,31 @@ struct ggml_tensor * ggml_argmax(
     return result;
 }
 
+// dell_xxxx
+struct ggml_tensor * ggml_argmax_ext(
+        struct ggml_context * ctx,
+        struct ggml_tensor * a,
+        int dim) {
+    GGML_ASSERT(dim >= 0 && dim < 4);
+    bool is_node = false;
+    if (a->grad) {
+        GGML_ABORT("fatal error");
+        is_node = true;
+    }
+
+    int64_t ne[4] = { a->ne[0], a->ne[1], a->ne[2], a->ne[3] };
+    ne[dim] = 1;
+    struct ggml_tensor * result = ggml_new_tensor(ctx, GGML_TYPE_I32, 4, ne);
+    ggml_set_op_params_i32(result, 0, dim);
+
+    result->op   = GGML_OP_ARGMAX_EXT;
+    result->grad = is_node ? ggml_dup_tensor(ctx, result) : NULL;
+    result->src[0] = a;
+
+    return result;
+}
+
+
 // ggml_repeat
 
 struct ggml_tensor * ggml_repeat(
@@ -5839,6 +5849,10 @@ struct ggml_tensor * ggml_mul_mat(
         struct ggml_context * ctx,
         struct ggml_tensor  * a,
         struct ggml_tensor  * b) {
+
+    if (! ggml_can_mul_mat(a, b)) {
+        printf("a->name = %s, b->name = %s\n", a->name, b->name);
+    }
     GGML_ASSERT(ggml_can_mul_mat(a, b));
     GGML_ASSERT(!ggml_is_transposed(a));
 
@@ -8264,7 +8278,9 @@ struct ggml_tensor * ggml_get_rel_pos(
     }
 
     const int64_t ne[4] = { a->ne[0], kh, qh, 1, };
-    struct ggml_tensor * result = ggml_new_tensor(ctx, GGML_TYPE_F16, 3, ne);
+    // dell_xxxx
+    // struct ggml_tensor * result = ggml_new_tensor(ctx, GGML_TYPE_F16, 3, ne);
+    struct ggml_tensor * result = ggml_new_tensor(ctx, a->type, 3, ne);
 
     result->op   = GGML_OP_GET_REL_POS;
     result->grad = is_node ? ggml_dup_tensor(ctx, result) : NULL;
@@ -12040,6 +12056,99 @@ static void ggml_compute_forward_argmax_f32(
     }
 }
 
+static void ggml_compute_forward_argmax_ext_f32(
+        const struct ggml_compute_params * params,
+        struct ggml_tensor * dst) {
+
+    const struct ggml_tensor * src = dst->src[0];
+    GGML_ASSERT(dst->type == GGML_TYPE_F32);
+    GGML_ASSERT(src->type == GGML_TYPE_F32);
+    float *dst_data = (float *)dst->data;
+    float *src_data = (float *)src->data;
+
+    if (params->ith != 0) {
+        return;
+    }
+    const int dim = ggml_get_op_params_i32(dst, 0);
+
+    float m;
+    int64_t d_offset, s_offset, s_delta, s_index;
+
+    if (dim == 0) {
+        s_delta = 1;
+        tensor_foreach_d0(dst) {
+            m = -INFINITY; s_index = 0;
+            s_offset = TENSOR_LOGIC_OFFSET(src, 0 /*i0*/, i1, i2, i3);
+            for (int64_t i0 = 0; i0 < src->ne[0]; i0++) {
+                if (src_data[s_offset] > m) {
+                    s_index = i0;
+                    m = src_data[s_offset];
+                }
+                s_offset += s_delta;
+            }
+            d_offset = TENSOR_LOGIC_OFFSET(dst, 0/*i0*/, i1, i2, i3);
+            dst_data[d_offset] = (int)s_index;
+        }
+        return;
+    }
+
+    if (dim == 1) {
+        s_delta = src->ne[0];
+        tensor_foreach_d1(dst) {
+            m = -INFINITY; s_index = 0;
+            s_offset = TENSOR_LOGIC_OFFSET(src, i0, 0 /*i1*/, i2, i3);
+            for (int64_t i1 = 0; i1 < src->ne[1]; i1++) {
+                if (src_data[s_offset] > m) {
+                    s_index = i1;
+                    m = src_data[s_offset];
+                }
+                s_offset += s_delta;
+            }
+            d_offset = TENSOR_LOGIC_OFFSET(dst, i0, 0/*i1*/, i2, i3);
+            dst_data[d_offset] = (int)s_index;
+        }
+        return;
+    }
+
+    if (dim == 2) {
+        s_delta = src->ne[0] * src->ne[1];
+        tensor_foreach_d2(dst) {
+            m = -INFINITY; s_index = 0;
+            s_offset = TENSOR_LOGIC_OFFSET(src, i0, i1, 0 /*i2*/, i3);
+            for (int64_t i2 = 0; i2 < src->ne[2]; i2++) {
+                if (src_data[s_offset] > m) {
+                    s_index = i2;
+                    m = src_data[s_offset];
+                }
+                s_offset += s_delta;
+            }
+            d_offset = TENSOR_LOGIC_OFFSET(dst, i0, i1, 0 /*i2*/, i3);
+            dst_data[d_offset] = (int)s_index;
+        }
+        return;
+    }
+
+    if (dim == 3) {
+        s_delta = src->ne[0] * src->ne[1] * src->ne[2];
+        tensor_foreach_d3(dst) {
+            m = -INFINITY; s_index = 0;
+            s_offset = TENSOR_LOGIC_OFFSET(src, i0, i1, i2, 0 /*i3*/);
+            for (int64_t i3 = 0; i3 < src->ne[3]; i3++) {
+                if (src_data[s_offset] > m) {
+                    s_index = i3;
+                    m = src_data[s_offset];
+                }
+                s_offset += s_delta;
+            }
+            d_offset = TENSOR_LOGIC_OFFSET(dst, i0, i1, i2, 0/*i3*/);
+            dst_data[d_offset] = (int)s_index;
+        }
+        return;
+    }
+    // GGML_ASSERT(dim >= 0 && dim < 4);
+}
+
+
 static void ggml_compute_forward_argmax(
         const struct ggml_compute_params * params,
         struct ggml_tensor * dst) {
@@ -12057,6 +12166,25 @@ static void ggml_compute_forward_argmax(
             }
     }
 }
+
+static void ggml_compute_forward_argmax_ext(
+        const struct ggml_compute_params * params,
+        struct ggml_tensor * dst) {
+
+    const struct ggml_tensor * src0 = dst->src[0];
+
+    switch (src0->type) {
+        case GGML_TYPE_F32:
+            {
+                ggml_compute_forward_argmax_ext_f32(params, dst);
+            } break;
+        default:
+            {
+                GGML_ABORT("fatal error");
+            }
+    }
+}
+
 
 // ggml_compute_forward_repeat
 
@@ -18304,7 +18432,6 @@ static void ggml_compute_forward_ssm_scan(
 }
 
 // ggml_compute_forward_win_part
-
 static void ggml_compute_forward_win_part_f32(
         const struct ggml_compute_params * params,
         struct ggml_tensor * dst) {
@@ -18527,6 +18654,34 @@ static void ggml_compute_forward_get_rel_pos_f16(
     }
 }
 
+// dell_xxxx
+static void ggml_compute_forward_get_rel_pos_f32(
+        const struct ggml_compute_params * params,
+        struct ggml_tensor * dst) {
+    UNUSED(params);
+
+    const struct ggml_tensor * src0 = dst->src[0];
+
+    // ref: https://github.com/facebookresearch/segment-anything/blob/main/segment_anything/modeling/image_encoder.py#L292-L322
+
+    GGML_TENSOR_UNARY_OP_LOCALS
+
+    const int64_t w = ne1;
+
+    float * src0_data = (float *) src0->data;
+    float * dst_data  = (float *) dst->data;
+
+    for (int64_t i2 = 0; i2 < ne2; ++i2) {
+        for (int64_t i1 = 0; i1 < ne1; ++i1) {
+            const int64_t pos = (w - i1 - 1) + i2;
+            for (int64_t i0 = 0; i0 < ne0; ++i0) {
+                dst_data[i2*ne1*ne0 + i1*ne0 + i0] = src0_data[pos*ne00 + i0];
+            }
+        }
+    }
+}
+
+
 static void ggml_compute_forward_get_rel_pos(
         const struct ggml_compute_params * params,
         struct ggml_tensor * dst) {
@@ -18534,6 +18689,10 @@ static void ggml_compute_forward_get_rel_pos(
     const struct ggml_tensor * src0 = dst->src[0];
 
     switch (src0->type) {
+        case GGML_TYPE_F32:
+            {
+                ggml_compute_forward_get_rel_pos_f32(params, dst);
+            } break;
         case GGML_TYPE_F16:
         case GGML_TYPE_BF16:
             {
@@ -19267,6 +19426,11 @@ static void ggml_compute_forward(struct ggml_compute_params * params, struct ggm
             {
                 ggml_compute_forward_argmax(params, tensor);
             } break;
+        case GGML_OP_ARGMAX_EXT:
+            {
+                ggml_compute_forward_argmax_ext(params, tensor);
+            } break;
+
         case GGML_OP_REPEAT:
             {
                 ggml_compute_forward_repeat(params, tensor);
@@ -20079,6 +20243,7 @@ static void ggml_compute_backward(struct ggml_context * ctx, struct ggml_tensor 
             } break;            
         case GGML_OP_MEAN:
         case GGML_OP_ARGMAX:
+        case GGML_OP_ARGMAX_EXT:
             {
                 GGML_ABORT("fatal error"); // TODO: implement
             }
@@ -21280,6 +21445,7 @@ static int ggml_get_n_tasks(struct ggml_tensor * node, int n_threads) {
         case GGML_OP_NORM2:
         case GGML_OP_MEAN:
         case GGML_OP_ARGMAX:
+        case GGML_OP_ARGMAX_EXT:
         case GGML_OP_REPEAT:
         case GGML_OP_REPEAT_BACK:
         case GGML_OP_LEAKY_RELU:

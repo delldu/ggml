@@ -55,7 +55,6 @@ static bool ggml_op_can_inplace(enum ggml_op op) {
         case GGML_OP_RMS_NORM:
         case GGML_OP_SOFT_MAX:
             return true;
-
         default:
             return false;
     }

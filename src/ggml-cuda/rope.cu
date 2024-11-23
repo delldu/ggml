@@ -269,3 +269,65 @@ void ggml_cuda_op_rope(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
         }
     }
 }
+
+template<typename T>
+static __global__ void get_rel_pos_kernel(const T*src, T* dst, const int n, const int ne0, const int ne1, const int ne2) {
+    int index = threadIdx.x + blockIdx.x * blockDim.x;
+    if (index >= n) { // n == ne0 * ne1 * ne2 for dst
+        return;
+    }
+
+    // for (int64_t i2 = 0; i2 < ne2; ++i2) { // q_size
+    //     for (int64_t i1 = 0; i1 < ne1; ++i1) { // k_size
+    //         const int64_t pos = (ne1 - i1 - 1) + i2;
+    //         for (int64_t i0 = 0; i0 < ne0; ++i0) { // dst->ne[0]
+    //             dst_data[i2*ne1*ne0 + i1*ne0 + i0] = src0_data[pos*ne00 + i0];
+    //         }
+    //     }
+    // }
+
+    // dst index ...
+    int d0 = index % ne0;
+    int d1 = (index / ne0) % ne1;
+    int d2 = (index / (ne0 * ne1)) % ne2;
+
+    // src index ...
+    int pos = (ne1 - d1 - 1) + d2;
+    int s_index = pos * ne0 + d0; // dst->ne[0] == src->ne[0]
+
+    dst[index] = src[s_index];
+}
+
+
+#define CUDA_GET_REL_POS_BLOCK_SIZE  256
+
+template<typename T>
+static void get_rel_pos_cuda(const T* src, T* dst, const int n,
+        const int ne0, const int ne1, const int ne2, cudaStream_t stream) {
+    int num_blocks = (n + CUDA_GET_REL_POS_BLOCK_SIZE - 1) / CUDA_GET_REL_POS_BLOCK_SIZE;
+    get_rel_pos_kernel<<<num_blocks, CUDA_GET_REL_POS_BLOCK_SIZE, 0, stream>>>(src, dst, n, ne0, ne1, ne2);
+}
+
+void ggml_cuda_op_get_rel_pos(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+    const ggml_tensor * src = dst->src[0];
+
+    cudaStream_t stream = ctx.stream();
+
+    GGML_ASSERT(ggml_is_contiguous(src));
+    GGML_ASSERT(src->type == GGML_TYPE_F32 || src->type == GGML_TYPE_F16);
+    GGML_ASSERT(dst->type == GGML_TYPE_F32 || dst->type == GGML_TYPE_F16);
+    GGML_ASSERT(src->type == dst->type);
+
+    const int n = ggml_nelements(dst);
+    if (dst->type == GGML_TYPE_F32) {
+        get_rel_pos_cuda<float>((const float *)src->data, (float *)dst->data, n, dst->ne[0], dst->ne[1], dst->ne[2], stream);
+        return;
+    }
+
+    if (dst->type == GGML_TYPE_F16) {
+        get_rel_pos_cuda<half>((const half *)src->data, (half *)dst->data, n, dst->ne[0], dst->ne[1], dst->ne[2], stream);
+        return;
+    }
+
+    // GGML_ASSERT( dst->type == GGML_TYPE_F32 ||  dst->type == GGML_TYPE_F16);
+}

@@ -103,6 +103,67 @@ static __global__ void shuffle_f32(const float * x, float * dst,
     dst[index] = *(float *)((char *)x + s3 * nb03 + s2 * nb02 + s1 * nb01 + s0 * nb00);
 }
 
+static __global__ void win_part_f32(const float * src, float * dst, const int n,
+        const int s_ne0, const int s_ne1, const int s_ne2, const int s_ne3, // for src ...
+        const int d_ne0, const int d_ne1, const int d_ne2, const int d_ne3, // for dst ...
+        const int npx, const int npy, const int w) {
+    int index = threadIdx.x + blockIdx.x * blockDim.x;
+    if (index >= n) {
+        return;
+    }
+
+    for (int py = 0; py < npy; ++py) {
+        for (int px = 0; px < npx; ++px) {
+            const int64_t d3 = py*npx + px;
+            for (int64_t d2 = 0; d2 < d_ne2; ++d2) {
+                for (int64_t d1 = 0; d1 < d_ne1; ++d1) {
+                    // for (int64_t d0 = 0; d0 < d_ne0; ++d0) {
+                        const int64_t s2 = py*w + d2;
+                        const int64_t s1 = px*w + d1;
+                        // const int64_t s0 = d0;
+                        // d0 == s0 == index ...    
+                        const int64_t i = d3*d_ne2*d_ne1*d_ne0 + d2*d_ne1*d_ne0 + d1*d_ne0 + index; // d0;
+                        const int64_t j =                        s2*s_ne1*s_ne0 + s1*s_ne0 + index; // s0;
+                        if (py*w + d2 >= s_ne2 || px*w + d1 >= s_ne1) {
+                            dst[i] = 0.0f;
+                        } else {
+                            dst[i] = src[j];
+                        }
+                    // }
+                }
+            }
+        }
+    }
+}
+
+static __global__ void win_unpart_f32(const float * src, float * dst, const int n,
+        const int s_ne0, const int s_ne1, const int s_ne2, const int s_ne3, // for src ...
+        const int d_ne0, const int d_ne1, const int d_ne2, const int d_ne3, // for dst ...
+        const int npx, const int w) {
+    int index = threadIdx.x + blockIdx.x * blockDim.x;
+    if (index >= n) {
+        return;
+    }
+
+    for (int64_t d2 = 0; d2 < d_ne2; ++d2) {
+        for (int64_t d1 = 0; d1 < d_ne1; ++d1) {
+            // for (int64_t i0 = 0; i0 < ne0; ++i0) {
+                const int ip2 = d2/w;
+                const int ip1 = d1/w;
+                const int64_t s2 = d2%w;
+                const int64_t s1 = d1%w;
+                // const int64_t s0 = d0;
+
+                // const int64_t i = (ip2*npx + ip1)*ne02*ne01*ne00 + i02*ne01*ne00 + i01*ne00 + i00;
+                // const int64_t j =                                  i2*ne1*ne0    + i1*ne0   + i0;
+                const int64_t i = (ip2*npx + ip1)*s_ne2*s_ne1*s_ne0 + s2*s_ne1*s_ne0 + s1*s_ne0 + index; // s0;
+                const int64_t j =                                     d2*d_ne1*d_ne0 + d1*d_ne0 + index; // d0;
+                dst[j] = src[i];
+            // }
+        }
+    }
+}
+
 static __global__ void scatter_f32(float * dst, const int n,
         const int d_ne0, const int d_ne1, const int d_ne2, const int d_ne3, // for dst ...
         const int d_nb0, const int d_nb1, const int d_nb2, const int d_nb3, // for dst ...
@@ -113,13 +174,7 @@ static __global__ void scatter_f32(float * dst, const int n,
     }
 
     // src index ...
-    // int s0 = k % d_ne0;
-    // int s1 = (k / d_ne0) % d_ne1;
-    // int s2 = (k / (d_ne0 * d_ne1)) % d_ne2;
-    // int s3 = (k / (d_ne0 * d_ne1 * d_ne2)) % d_ne3;
-
     int s0, s1, s2, s3;
-
     // GGML_ASSERT(dim >= 0 && dim < 2); // only for dim == 0 || dim == 1
     if (dim == 0) { // same as d_ne0 === 1
         s0 = 0;
@@ -233,6 +288,29 @@ static void shuffle_f32_cuda(const float * x, float * dst,
     int dst_size = ne10 * ne11 * ne12 * ne13;
     int num_blocks = (dst_size + CUDA_SHUFFLE_BLOCK_SIZE - 1) / CUDA_SHUFFLE_BLOCK_SIZE;
     shuffle_f32<<<num_blocks, CUDA_SHUFFLE_BLOCK_SIZE,0,stream>>>(x, dst, nb00, nb01, nb02, nb03, ne10, ne11, ne12, ne13, R);
+}
+
+#define CUDA_WIN_PART_BLOCK_SIZE 256
+
+
+static void win_part_f32_cuda(const float * src, float * dst, const int n, 
+        const int s_ne0, const int s_ne1, const int s_ne2, const int s_ne3, // for src ...
+        const int d_ne0, const int d_ne1, const int d_ne2, const int d_ne3, // for dst ...
+        const int npx, const int npy, const int w, cudaStream_t stream) {
+    int num_blocks = (n + CUDA_WIN_PART_BLOCK_SIZE - 1) / CUDA_WIN_PART_BLOCK_SIZE;
+    
+    win_part_f32<<<num_blocks, CUDA_WIN_PART_BLOCK_SIZE,0,stream>>>(src, dst, n,
+        s_ne0, s_ne1, s_ne2, s_ne3, d_ne0, d_ne1, d_ne2, d_ne3, npx, npy, w);
+}
+
+static void win_unpart_f32_cuda(const float * src, float * dst, const int n, 
+        const int s_ne0, const int s_ne1, const int s_ne2, const int s_ne3, // for src ...
+        const int d_ne0, const int d_ne1, const int d_ne2, const int d_ne3, // for dst ...
+        const int npx, const int w, cudaStream_t stream) {
+    int num_blocks = (n + CUDA_WIN_PART_BLOCK_SIZE - 1) / CUDA_WIN_PART_BLOCK_SIZE;
+    
+    win_unpart_f32<<<num_blocks, CUDA_WIN_PART_BLOCK_SIZE,0,stream>>>(src, dst, n,
+        s_ne0, s_ne1, s_ne2, s_ne3, d_ne0, d_ne1, d_ne2, d_ne3, npx, w);
 }
 
 
@@ -385,6 +463,47 @@ void ggml_cuda_op_shuffle(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
 
     shuffle_f32_cuda(src0_d, dst_d, src0->nb[0], src0->nb[1], src0->nb[2], src0->nb[3], dst->ne[0], dst->ne[1], dst->ne[2], dst->ne[3], R, stream);
 }
+
+// dell_xxxx
+void ggml_cuda_op_win_part(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+    const ggml_tensor * src = dst->src[0];
+    const float * src_d = (const float *)src->data;
+    float * dst_d = (float *)dst->data;
+    cudaStream_t stream = ctx.stream();
+
+    GGML_ASSERT(src->type == GGML_TYPE_F32);
+    GGML_ASSERT(dst->type == GGML_TYPE_F32);
+
+    const int npx = dst->op_params[0];
+    const int npy = dst->op_params[1]; // cuda index ...
+    const int w = dst->op_params[2];
+
+    win_part_f32_cuda(src_d, dst_d, (int)dst->ne[0], // dst->ne[0] == src->ne[0]
+        src->ne[0], src->ne[1], src->ne[2], src->ne[3], 
+        dst->ne[0], dst->ne[1], dst->ne[2], dst->ne[3], 
+        npx, npy, w, stream);
+}
+
+// dell_xxxx
+void ggml_cuda_op_win_unpart(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+    const ggml_tensor * src = dst->src[0];
+    const float * src_d = (const float *)src->data;
+    float * dst_d = (float *)dst->data;
+    cudaStream_t stream = ctx.stream();
+
+    GGML_ASSERT(src->type == GGML_TYPE_F32);
+    GGML_ASSERT(dst->type == GGML_TYPE_F32);
+
+    const int w = dst->op_params[0];
+
+    const int px = (w - dst->ne[1]%w)%w;
+    const int npx = (px + dst->ne[1])/w;
+
+    win_unpart_f32_cuda(src_d, dst_d, dst->ne[0], // dst->ne[0] == src->ne[0]
+        src->ne[0], src->ne[1], src->ne[2], src->ne[3], 
+        dst->ne[0], dst->ne[1], dst->ne[2], dst->ne[3], npx, w, stream);
+}
+
 
 // dell_xxxx
 void ggml_cuda_op_flip(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {

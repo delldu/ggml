@@ -415,6 +415,10 @@ void ggml_cuda_cpy(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, gg
     const int64_t ne = ggml_nelements(src0);
     GGML_ASSERT(ne == ggml_nelements(src1));
 
+    if (ggml_nbytes(src0) > INT_MAX || ggml_nbytes(src1) > INT_MAX) {
+        CheckPoint("src0->name = %s, src1->name = %s", src0->name, src1->name);
+    }
+
     GGML_ASSERT(ggml_nbytes(src0) <= INT_MAX);
     GGML_ASSERT(ggml_nbytes(src1) <= INT_MAX);
 

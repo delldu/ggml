@@ -1,6 +1,33 @@
 #pragma once
 #define CheckPoint(fmt, arg...) printf("# CheckPoint: %d(%s): " fmt "\n", (int)__LINE__, __FILE__, ##arg)
 
+#define TENSOR_BYTES_OFFSET(t, i0, i1, i2, i3) \
+    ((i0)*(t)->nb[0] + (i1)*(t)->nb[1] + (i2)*(t)->nb[2] + (i3)*(t)->nb[3])
+
+#define TENSOR_LOGIC_OFFSET(t, i0, i1, i2, i3) \
+    ((i0) + (i1)*((t)->ne[0]) + (i2)*((t)->ne[1])*((t)->ne[0]) + (i3)*((t)->ne[2])*((t)->ne[1])*((t)->ne[0]))
+
+#define tensor_foreach_d0(t) \
+    for (int64_t i1 = 0; i1 < (t)->ne[1]; i1++) \
+        for (int64_t i2 = 0; i2 < (t)->ne[2]; i2++) \
+            for (int64_t i3 = 0; i3 < (t)->ne[3]; i3++) 
+
+#define tensor_foreach_d1(t) \
+    for (int64_t i0 = 0; i0 < (t)->ne[0]; i0++) \
+        for (int64_t i2 = 0; i2 < (t)->ne[2]; i2++) \
+            for (int64_t i3 = 0; i3 < (t)->ne[3]; i3++) 
+
+#define tensor_foreach_d2(t) \
+    for (int64_t i0 = 0; i0 < (t)->ne[0]; i0++) \
+        for (int64_t i1 = 0; i1 < (t)->ne[1]; i1++) \
+            for (int64_t i3 = 0; i3 < (t)->ne[3]; i3++)
+
+#define tensor_foreach_d3(t) \
+    for (int64_t i0 = 0; i0 < (t)->ne[0]; i0++) \
+        for (int64_t i1 = 0; i1 < (t)->ne[1]; i1++) \
+            for (int64_t i2 = 0; i2 < (t)->ne[2]; i2++)
+
+
 //
 // GGML Tensor Library
 //
@@ -469,6 +496,7 @@ extern "C" {
         GGML_OP_NORM2,
         GGML_OP_MEAN,
         GGML_OP_ARGMAX,
+        GGML_OP_ARGMAX_EXT,
         GGML_OP_REPEAT,
         GGML_OP_REPEAT_BACK,
         GGML_OP_CONCAT,
@@ -1040,10 +1068,23 @@ extern "C" {
             struct ggml_context * ctx,
             struct ggml_tensor  * a);
 
+    // // dell_add
+    // GGML_API struct ggml_tensor * ggml_mean_ext(
+    //         struct ggml_context * ctx,
+    //         struct ggml_tensor  * a,
+    //         int                   dim);
+
     // argmax along rows
     GGML_API struct ggml_tensor * ggml_argmax(
             struct ggml_context * ctx,
             struct ggml_tensor  * a);
+
+    // dell_add
+    GGML_API struct ggml_tensor * ggml_argmax_ext(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            int                   dim);
+
 
     // if a is the same shape as b, and a is not parameter, return a
     // otherwise, return a new tensor: repeat(a) to fit in b
@@ -1491,6 +1532,12 @@ extern "C" {
     GGML_API struct ggml_tensor * ggml_soft_max(
             struct ggml_context * ctx,
             struct ggml_tensor  * a);
+
+    // // dell_add
+    // GGML_API struct ggml_tensor * ggml_softmax(
+    //         struct ggml_context * ctx,
+    //         struct ggml_tensor  * a,
+    //         int                   dim);
 
     // in-place, returns view(a)
     GGML_API struct ggml_tensor * ggml_soft_max_inplace(
