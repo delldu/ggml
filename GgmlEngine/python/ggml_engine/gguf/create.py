@@ -41,6 +41,9 @@ def create_gguf(torch_model, gguf_format, gguf_model, prefix):
                 v = v.squeeze(4)
             if v.dim() > 4:
                 v = v.squeeze(0)
+            if v.dim() > 4:
+                D1, D2, D3, D4, D5 = v.size()
+                v = v.reshape(D1, D2, D3*D4*D5)
             
         if gguf_format == "F32":
             gguf_writer.add_tensor(k, v.numpy().astype(np.float32))
