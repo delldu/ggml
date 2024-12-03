@@ -53,6 +53,11 @@
 
 #define MATRIX_ROW_PADDING 512 // last row of quant. matrices is a multiple of this to avoid out-of-bounds memory accesses
 
+// dell_xxxx
+#define tensor_full_offset(i0, i1, i2, i3, n0, n1, n2, n3) \
+    ((i0) * (n0) + (i1) * (n1) + (i2) * (n2) + (i3) * (n3))
+typedef double ggml_float;
+
 #if defined(_MSC_VER)
 #pragma warning(disable: 4244 4267) // possible loss of data
 #endif

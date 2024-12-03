@@ -204,3 +204,143 @@ void ggml_cuda_op_soft_max(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
         soft_max_f32_cuda(src0_d, src1_dd, dst_d, ne00, nrows_x, nrows_y, scale, max_bias, stream);
     }
 }
+
+
+static __device__ void gpu_do_softmax_f32(const float *src, float *dst, int dim, int64_t ne, 
+    int64_t src_offset, int64_t src_step, int64_t dst_offset, int64_t dst_step) {
+
+    float m, sum, *p, *sp, *dp;
+    int64_t s_offset, d_offset;
+
+    // get max ...
+    m = -INFINITY;
+    s_offset = src_offset;
+    for (int64_t i = 0; i < ne; i++) {
+        p = (float *)((char *)src + s_offset);
+        if (*p > m) {
+            m = *p;
+        }
+        s_offset += src_step;
+    }
+
+    // temp update ...
+    sum = 0.0;
+    s_offset = src_offset;
+    d_offset = dst_offset;
+    for (int64_t i = 0; i < ne; i++) {
+        sp = (float *)((char *)src + s_offset);
+        dp = (float *)((char *)dst + s_offset);
+
+        *dp = expf(*sp - m);
+        sum += *dp;
+
+        s_offset += src_step;
+        d_offset += dst_step;
+    }
+
+    // final update ...
+    d_offset = dst_offset;
+    for (int64_t i = 0; i < ne; i++) {
+        p = (float *)((char *)dst + d_offset);
+        *p = (*p)/sum;
+
+        d_offset += dst_step;
+    }
+}
+
+
+static __global__ void softmax_f32(const float * src, float * dst, const int n,
+    const int s_ne0, const int s_ne1, const int s_ne2, const int s_ne3,
+    const int s_nb0, const int s_nb1, const int s_nb2, const int s_nb3,
+    const int d_ne0, const int d_ne1, const int d_ne2, const int d_ne3, 
+    const int d_nb0, const int d_nb1, const int d_nb2, const int d_nb3, 
+    const int dim) {
+
+    int index = threadIdx.x + blockIdx.x * blockDim.x;
+    if (index >= n) { // n == (dim == 0)?s_ne1:s_ne0
+        return;
+    }
+
+    int64_t d_offset, s_offset;
+    if (dim == 0) { // thread is running on axis i1 ..., so i1 == index
+        for (int64_t i2 = 0; i2 < d_ne2; i2++) {
+            for (int64_t i3 = 0; i3 < d_ne3; i3++) {
+                s_offset = tensor_full_offset(0 /*i0*/, index, i2, i3, s_nb0, s_nb1, s_nb2, s_nb3);
+                d_offset = tensor_full_offset(0 /*i0*/, index, i2, i3, d_nb0, d_nb1, d_nb2, d_nb3);
+                gpu_do_softmax_f32(src, dst, dim, s_ne0, s_offset, s_nb0 /*s_step*/, d_offset, d_nb0 /*d_step*/);
+            }
+        }
+        return;
+    }
+
+    if (dim == 1) { // thread is running on axis i0 ..., so i0 == index
+        for (int64_t i2 = 0; i2 < d_ne2; i2++) {
+            for (int64_t i3 = 0; i3 < d_ne3; i3++) {
+                s_offset = tensor_full_offset(index, 0 /*i1*/, i2, i3, s_nb0, s_nb1, s_nb2, s_nb3);
+                d_offset = tensor_full_offset(index, 0 /*i1*/, i2, i3, d_nb0, d_nb1, d_nb2, d_nb3);
+                gpu_do_softmax_f32(src, dst, dim, s_ne1, s_offset, s_nb1 /*s_step*/, d_offset, d_nb1 /*d_step*/);
+            }
+        }
+        return;
+    }
+
+    if (dim == 2) { // thread is running on axis i0 ..., so i0 == index
+        for (int64_t i1 = 0; i1 < d_ne1; i1++) {
+            for (int64_t i3 = 0; i3 < d_ne3; i3++) {
+                s_offset = tensor_full_offset(index, i1, 0 /*i2*/, i3, s_nb0, s_nb1, s_nb2, s_nb3);
+                d_offset = tensor_full_offset(index, i1, 0 /*i2*/, i3, d_nb0, d_nb1, d_nb2, d_nb3);
+                gpu_do_softmax_f32(src, dst, dim, s_ne2, s_offset, s_nb2 /*s_step*/, d_offset, d_nb2 /*d_step*/);
+            }
+        }
+        return;
+    }
+
+    if (dim == 3) { // thread is running on axis i0 ..., so i0 == index
+        for (int64_t i1 = 0; i1 < d_ne1; i1++) {
+            for (int64_t i2 = 0; i2 < d_ne2; i2++) {
+                s_offset = tensor_full_offset(index, i1, i2, 0 /*i3*/, s_nb0, s_nb1, s_nb2, s_nb3);
+                d_offset = tensor_full_offset(index, i1, i2, 0 /*i3*/, d_nb0, d_nb1, d_nb2, d_nb3);
+                gpu_do_softmax_f32(src, dst, dim, s_ne3, s_offset, s_nb3 /*s_step*/, d_offset, d_nb3 /*d_step*/);
+            }
+        }
+        return;
+    }
+    // GGML_ASSERT(dim >= 0 && dim < 4);
+}
+
+// dell_xxxx
+#define CUDA_SOFTMAX_BLOCK_SIZE 256
+static void softmax_f32_cuda(const float * src, float * dst, const int n, 
+    int const s_ne0, int const s_ne1, int const s_ne2, int const s_ne3,
+    int const s_nb0, int const s_nb1, int const s_nb2, int const s_nb3,
+    int const d_ne0, int const d_ne1, int const d_ne2, int const d_ne3,
+    int const d_nb0, int const d_nb1, int const d_nb2, int const d_nb3,
+    const int dim, cudaStream_t stream) {
+    int num_blocks = (n + CUDA_SOFTMAX_BLOCK_SIZE - 1) / CUDA_SOFTMAX_BLOCK_SIZE;
+
+    softmax_f32<<<num_blocks, CUDA_SOFTMAX_BLOCK_SIZE, 0, stream>>>(src, dst, n, 
+        s_ne0, s_ne1, s_ne2, s_ne3, s_nb0, s_nb1, s_nb2, s_nb3,
+        d_ne0, d_ne1, d_ne2, d_ne3, d_nb0, d_nb1, d_nb2, d_nb3, dim);
+}
+
+
+void ggml_cuda_op_softmax(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+    const ggml_tensor * src = dst->src[0];
+    const float * src_d = (const float *)src->data;
+    float * dst_d = (float *)dst->data;
+    cudaStream_t stream = ctx.stream();
+
+    GGML_ASSERT(src->type == GGML_TYPE_F32);
+    GGML_ASSERT(dst->type == GGML_TYPE_F32);
+    const int dim = dst->op_params[0];
+    GGML_ASSERT(dim >= 0 && dim < 4);
+
+    const int n = (dim == 0)?src->ne[1]:src->ne[0];
+
+    softmax_f32_cuda(src_d, dst_d, n, 
+        src->ne[0], src->ne[1], src->ne[2], src->ne[3],
+        src->nb[0], src->nb[1], src->nb[2], src->nb[3],
+        dst->ne[0], dst->ne[1], dst->ne[2], dst->ne[3],
+        dst->nb[0], dst->nb[1], dst->nb[2], dst->nb[3],
+        dim, stream);
+}

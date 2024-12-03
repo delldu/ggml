@@ -8,6 +8,9 @@
 
 void ggml_cuda_op_upscale(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
 void ggml_cuda_op_interpolate(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
+void ggml_cuda_op_grid_sample(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
+void ggml_cuda_op_soft_splat(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
+void ggml_cuda_op_eluer_motion(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
 void ggml_cuda_op_shuffle(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
 void ggml_cuda_op_flip(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
 void ggml_cuda_op_scatter(ggml_backend_cuda_context & ctx, ggml_tensor * dst);

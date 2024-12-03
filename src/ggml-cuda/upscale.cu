@@ -22,6 +22,7 @@ static __global__ void upscale_f32(const float * x, float * dst,
     dst[index] = *(float *)((char *)x + i03 * nb03 + i02 * nb02 + i01 * nb01 + i00 * nb00);
 }
 
+// dell_xxxx
 static __global__ void interpolate_f32(const float * x, float * dst,
         const int s_ne0, const int s_ne1, const int s_ne2, const int s_ne3, // for src ...
         const int s_nb0, const int s_nb1, const int s_nb2, const int s_nb3, // for src ...
@@ -32,67 +33,266 @@ static __global__ void interpolate_f32(const float * x, float * dst,
         return;
     }
 
-    int i10 = index % d_ne0;
-    int i11 = (index / d_ne0) % d_ne1;
-    int i12 = (index / (d_ne0 * d_ne1)) % d_ne2;
-    int i13 = (index / (d_ne0 * d_ne1 * d_ne2)) % d_ne3;
+    int d_0 = index % d_ne0;
+    int d_1 = (index / d_ne0) % d_ne1;
+    int d_2 = (index / (d_ne0 * d_ne1)) % d_ne2;
+    int d_3 = (index / (d_ne0 * d_ne1 * d_ne2)) % d_ne3;
 
-    float d;
     float u = 1.0;
+    int s1_0, s1_1, s1_2, s1_3;
+    int s2_0, s2_1, s2_2, s2_3;
+    
+    s1_0 = s2_0 = d_0;
+    s1_1 = s2_1 = d_1;
+    s1_2 = s2_2 = d_2;
+    s1_3 = s2_3 = d_3;
 
-    d = (float)(i10 + 0.5)/sf0 - 0.5;
-    if (d < 0.0) d = 0.0;
-    int i00 = (int)d;
-    int j00 = (dim == 0 && i00 + 1 < s_ne0)? i00 + 1 : i00;
     if (dim == 0) {
-        u = d - i00;
+        float d = (float)(d_0 + 0.5)/sf0 - 0.5;
+        if (d < 0.0) d = 0.0;
+        s1_0 = (int)d;
+        s2_0 = (s1_0 + 1 < s_ne0)? s1_0 + 1 : s1_0;
+        u = d - s1_0;
     }
 
-    d = (float)(i11 + 0.5)/sf1 - 0.5;
-    if (d < 0.0) d = 0.0;
-    int i01 = (int)d;
-    int j01 = (dim == 1 && i01 + 1 < s_ne1)? i01 + 1 : i01;
     if (dim == 1) {
-        u = d - i01;
+        float d = (float)(d_1 + 0.5)/sf1 - 0.5;
+        if (d < 0.0) d = 0.0;
+        s1_1 = (int)d;
+        s2_1 = (s1_1 + 1 < s_ne1)? s1_1 + 1 : s1_1;
+        u = d - s1_1;
     }
 
-    d = (float)(i12 + 0.5)/sf2 - 0.5;
-    if (d < 0.0) d = 0.0;
-    int i02 = (int)d;
-    int j02 = (dim == 2 && i02 + 1 < s_ne2)? i02 + 1 : i02;
     if (dim == 2) {
-        u = d - i02;
+        float d = (float)(d_2 + 0.5)/sf2 - 0.5;
+        if (d < 0.0) d = 0.0;
+        s1_2 = (int)d;
+        s2_2 = (s1_2 + 1 < s_ne2)? s1_2 + 1 : s1_2;
+        u = d - s1_2;
     }
 
-    d = (float)(i13 + 0.5)/sf3 - 0.5;
-    if (d < 0.0) d = 0.0;
-    int i03 = (int)d;
-    int j03 = (dim == 3 && i03 + 1 < s_ne3)? i03 + 1 : i03;
     if (dim == 3) {
-        u = d - i03;
+        float d = (float)(d_3 + 0.5)/sf3 - 0.5;
+        if (d < 0.0) d = 0.0;
+        s1_3 = (int)d;
+        s2_3 = (s1_3 + 1 < s_ne3)? s1_3 + 1 : s1_3;
+        u = d - s1_3;
     }
 
-    float *x1 = (float *)((char *)x + i03 * s_nb3 + i02 * s_nb2 + i01 * s_nb1 + i00 * s_nb0);
-    float *x2 = (float *)((char *)x + j03 * s_nb3 + j02 * s_nb2 + j01 * s_nb1 + j00 * s_nb0);
+    int64_t x1_offset = tensor_full_offset(s1_0, s1_1, s1_2, s1_3, s_nb0, s_nb1, s_nb2, s_nb3);
+    int64_t x2_offset = tensor_full_offset(s2_0, s2_1, s2_2, s2_3, s_nb0, s_nb1, s_nb2, s_nb3);
+    float *x1 = (float *)((char *)x + x1_offset);
+    float *x2 = (float *)((char *)x + x2_offset);
 
     dst[index] = (1.0 - u) * (*x1) + u*(*x2); // interpolate ...  more near x*, more weight !
 }
 
-
-// torch convert x from (B, C*R^2, H, W) to (B, C, H*R, W*R)
-static __global__ void shuffle_f32(const float * x, float * dst,
-        const int nb00, const int nb01, const int nb02, const int nb03, // for src ...
-        const int ne10, const int ne11, const int ne12, const int ne13, // for dst ...
-        const int R) {
+// dell_xxxx
+static __global__ void grid_sample_f32(const float * src, const float *grid, float * dst,
+        const int n, const int H, const int W,
+        const int s_nb0, const int s_nb1, const int s_nb2, const int s_nb3, // for src ...
+        const int g_nb0, const int g_nb1, const int g_nb2, const int g_nb3, // for grid ...
+        const int d_ne0, const int d_ne1, const int d_ne2, const int d_ne3, // for dst ...
+        const int d_nb0, const int d_nb1, const int d_nb2, const int d_nb3) { // for dst ...
     int index = threadIdx.x + blockIdx.x * blockDim.x;
-    if (index >= ne10 * ne11 * ne12 * ne13) {
+    if (index >= n) {
         return;
     }
 
-    int d0 = index % ne10;
-    int d1 = (index / ne10) % ne11;
-    int d2 = (index / (ne10 * ne11)) % ne12;
-    int d3 = (index / (ne10 * ne11 * ne12)) % ne13;
+    int d_0 = index % d_ne0; // W
+    int d_1 = (index / d_ne0) % d_ne1; // H
+    int d_2 = (index / (d_ne0 * d_ne1)) % d_ne2; // C
+    int d_3 = (index / (d_ne0 * d_ne1 * d_ne2)) % d_ne3; // B
+
+    int64_t g_offset, src_offset, dst_offset;
+
+    // grid[b, h, w, 0]
+    g_offset = tensor_full_offset(0/*for x*/, d_0/*Wout*/, d_1 /*Hout*/, 0/*B*/, g_nb0, g_nb1, g_nb2, g_nb3);
+    float x0 = *(float *)((char *)grid + g_offset);
+
+    // grid[b, h, w, 1]
+    g_offset = tensor_full_offset(1/*for y*/, d_0/*Wout*/, d_1 /*Hout*/, 0/*B*/, g_nb0, g_nb1, g_nb2, g_nb3);
+    float y0 = *(float *)((char *)grid + g_offset);
+
+    // Going on tensor src 
+    // because x0 in [-1.0, 1.0], y0 in [-1.0, 1.0], so we do (x0 + 1.0)/2.0 ...
+    float fx = (x0 + 1.0f)/2.0f * W;
+    float fy = (y0 + 1.0f)/2.0f * H;
+
+    int x1 = (int)floor(fx);
+    int y1 = (int)floor(fy);
+    int x2 = x1 + 1;
+    int y2 = y1 + 1;
+
+    // weight ...
+    float w_x1y1 = (x2 - fx) * (y2 - fy);
+    float w_x2y1 = (fx - x1) * (y2 - fy);
+    float w_x1y2 = (x2 - fx) * (fy - y1);
+    float w_x2y2 = (fx - x1) * (fy - y1);
+
+    x1 = (x1 < 0)? 0 : x1; x1 = (x1 > W - 1)? W - 1: x1;
+    x2 = (x2 < 0)? 0 : x2; x2 = (x2 > W - 1)? W - 1: x2;
+    y1 = (y1 < 0)? 0 : y1; y1 = (y1 > H - 1)? H - 1: y1;
+    y2 = (y2 < 0)? 0 : y2; y2 = (y2 > H - 1)? H - 1: y2;
+
+    src_offset = tensor_full_offset(x1 /*w*/, y1 /*h*/, d_2 /*c*/, d_3 /*b*/, s_nb0, s_nb1, s_nb2, s_nb3);
+    float v_x1y1 = *(float *)((char *)src + src_offset);
+
+    src_offset = tensor_full_offset(x2 /*w*/, y1 /*h*/, d_2 /*c*/, d_3 /*b*/, s_nb0, s_nb1, s_nb2, s_nb3);
+    float v_x2y1 = *(float *)((char *)src + src_offset);
+
+    src_offset = tensor_full_offset(x1 /*w*/, y2 /*h*/, d_2 /*c*/, d_3 /*b*/, s_nb0, s_nb1, s_nb2, s_nb3);
+    float v_x1y2 = *(float *)((char *)src + src_offset);
+
+    src_offset = tensor_full_offset(x2 /*w*/, y2 /*h*/, d_2 /*c*/, d_3 /*b*/, s_nb0, s_nb1, s_nb2, s_nb3);
+    float v_x2y2 = *(float *)((char *)src + src_offset);
+
+    // ----------------------------------------------------------------------------
+    dst_offset = tensor_full_offset(d_0, d_1, d_2, d_3, d_nb0, d_nb1, d_nb2, d_nb3);
+    *(float *)((char *)dst + dst_offset) = \
+        w_x1y1 * v_x1y1 + w_x2y1 * v_x2y1 + w_x1y2 * v_x1y2 + w_x2y2 * v_x2y2;
+}
+
+// dell_add
+static __global__ void soft_splat_f32(const float * src, const float *flow, float * dst,
+        const int n, const int H, const int W,
+        const int s_nb0, const int s_nb1, const int s_nb2, const int s_nb3, // for src ...
+        const int f_nb0, const int f_nb1, const int f_nb2, const int f_nb3, // for flow ...
+        const int d_ne0, const int d_ne1, const int d_ne2, const int d_ne3, // for dst ...
+        const int d_nb0, const int d_nb1, const int d_nb2, const int d_nb3) { // for dst ...
+    int index = threadIdx.x + blockIdx.x * blockDim.x;
+    if (index >= n) {
+        return;
+    }
+
+    int d_0 = index % d_ne0; // W
+    int d_1 = (index / d_ne0) % d_ne1; // H
+    int d_2 = (index / (d_ne0 * d_ne1)) % d_ne2; // C
+    int d_3 = (index / (d_ne0 * d_ne1 * d_ne2)) % d_ne3; // B
+
+    int64_t f_offset, src_offset, dst_offset;
+
+    // flow[b, 0, h, w]
+    f_offset = tensor_full_offset(d_0 /*W*/, d_1 /*H*/,  0 /*for x*/, d_3 /*B*/, f_nb0, f_nb1, f_nb2, f_nb3);
+    float x0 = *(float *)((char *)flow + f_offset);
+
+    // flow[b, 1, h, w]
+    f_offset = tensor_full_offset(d_0 /*W*/, d_1 /*H*/,  1 /*for y*/, d_3 /*B*/, f_nb0, f_nb1, f_nb2, f_nb3);
+    float y0 = *(float *)((char *)flow + f_offset);
+
+    // Going on tensor src 
+    float fx = x0 + d_0;  // d_0 -- W, mesh_x + flow_x
+    float fy = y0 + d_1;  // d_1 -- H, mesh_y + flow_y
+
+    int x1 = (int)floor(fx);
+    int y1 = (int)floor(fy);
+    int x2 = x1 + 1;
+    int y2 = y1 + 1;
+
+    // weight ...
+    float w_x1y1 = (x2 - fx) * (y2 - fy);
+    float w_x2y1 = (fx - x1) * (y2 - fy);
+    float w_x1y2 = (x2 - fx) * (fy - y1);
+    float w_x2y2 = (fx - x1) * (fy - y1);
+
+    x1 = (x1 < 0)? 0 : x1; x1 = (x1 > W - 1)? W - 1: x1;
+    x2 = (x2 < 0)? 0 : x2; x2 = (x2 > W - 1)? W - 1: x2;
+    y1 = (y1 < 0)? 0 : y1; y1 = (y1 > H - 1)? H - 1: y1;
+    y2 = (y2 < 0)? 0 : y2; y2 = (y2 > H - 1)? H - 1: y2;
+
+    src_offset = tensor_full_offset(x1 /*w*/, y1 /*h*/, d_2 /*c*/, d_3 /*b*/, s_nb0, s_nb1, s_nb2, s_nb3);
+    float v_x1y1 = *(float *)((char *)src + src_offset);
+
+    src_offset = tensor_full_offset(x2 /*w*/, y1 /*h*/, d_2 /*c*/, d_3 /*b*/, s_nb0, s_nb1, s_nb2, s_nb3);
+    float v_x2y1 = *(float *)((char *)src + src_offset);
+
+    src_offset = tensor_full_offset(x1 /*w*/, y2 /*h*/, d_2 /*c*/, d_3 /*b*/, s_nb0, s_nb1, s_nb2, s_nb3);
+    float v_x1y2 = *(float *)((char *)src + src_offset);
+
+    src_offset = tensor_full_offset(x2 /*w*/, y2 /*h*/, d_2 /*c*/, d_3 /*b*/, s_nb0, s_nb1, s_nb2, s_nb3);
+    float v_x2y2 = *(float *)((char *)src + src_offset);
+
+    // ----------------------------------------------------------------------------
+    dst_offset = tensor_full_offset(d_0, d_1, d_2, d_3, d_nb0, d_nb1, d_nb2, d_nb3);
+    *(float *)((char *)dst + dst_offset) = \
+        w_x1y1 * v_x1y1 + w_x2y1 * v_x2y1 + w_x1y2 * v_x1y2 + w_x2y2 * v_x2y2;
+}
+
+
+static __global__ void euler_motion_f32(const float *flow, float * dst,
+        const int n, const int H, const int W, const int ntimes,
+        const int f_nb0, const int f_nb1, const int f_nb2, const int f_nb3, // for flow ...
+        const int d_ne0, const int d_ne1, const int d_ne2, const int d_ne3, // for dst ...
+        const int d_nb0, const int d_nb1, const int d_nb2, const int d_nb3) { // for dst ...
+    int index = threadIdx.x + blockIdx.x * blockDim.x;
+    if (index >= n) {
+        return;
+    }
+
+    int d_0 = index % d_ne0; // W
+    int d_1 = (index / d_ne0) % d_ne1; // H
+    // int d_2 = (index / (d_ne0 * d_ne1)) % d_ne2; // C
+    int d_3 = (index / (d_ne0 * d_ne1 * d_ne2)) % d_ne3; // B
+
+    float d, f;
+    int64_t f_offset, d_offset;
+
+    // 1) Init
+    d_offset = tensor_full_offset(d_0, d_1, 0 /*d_2 -- for x*/, d_3, d_nb0, d_nb1, d_nb2, d_nb3);
+    *(float *)((char *)dst + d_offset) = (float)d_0;
+    d_offset = tensor_full_offset(d_0, d_1, 1 /*d_2 -- for y*/, d_3, d_nb0, d_nb1, d_nb2, d_nb3);
+    *(float *)((char *)dst + d_offset) = (float)d_1;
+
+    // 2) Update
+    for (int i = 0; i < ntimes; i++) {
+        // update x
+        d_offset = tensor_full_offset(d_0, d_1, 0 /*d_2 -- for x*/, d_3, d_nb0, d_nb1, d_nb2, d_nb3);
+        d = *(float *)((char *)dst + d_offset);
+        f_offset = tensor_full_offset(d_0 /*W*/, d_1 /*H*/, 0 /*d_2 for x*/, d_3 /*B*/, f_nb0, f_nb1, f_nb2, f_nb3);
+        f = *(float *)((char *)flow + f_offset);
+        d += f;
+        if (d < 0.0 || d >= W - 1) {
+            d = (float)d_0;
+        }
+        *(float *)((char *)dst + d_offset) = d;
+
+        // update y
+        d_offset = tensor_full_offset(d_0, d_1, 1 /*d_2 -- for y*/, d_3, d_nb0, d_nb1, d_nb2, d_nb3);
+        d = *(float *)((char *)dst + d_offset);
+        f_offset = tensor_full_offset(d_0 /*W*/, d_1 /*H*/, 1 /*d_2 for y*/, d_3 /*B*/, f_nb0, f_nb1, f_nb2, f_nb3);
+        f = *(float *)((char *)flow + f_offset);
+        d += f;
+        if (d < 0.0 || d >= H - 1) {
+            d = (float)d_1;
+        }
+        *(float *)((char *)dst + d_offset) = d;
+    }
+
+    // 3) Final
+    d_offset = tensor_full_offset(d_0, d_1, 0 /*d_2 -- for x*/, d_3, d_nb0, d_nb1, d_nb2, d_nb3);
+    d = *(float *)((char *)dst + d_offset);
+    *(float *)((char *)dst + d_offset) = d - (float)d_0;
+    d_offset = tensor_full_offset(d_0, d_1, 1 /*d_2 -- for y*/, d_3, d_nb0, d_nb1, d_nb2, d_nb3);
+    d = *(float *)((char *)dst + d_offset);
+    *(float *)((char *)dst + d_offset) = d - (float)d_1;
+}
+
+// torch convert x from (B, C*R^2, H, W) to (B, C, H*R, W*R)
+static __global__ void shuffle_f32(const float * src, float * dst, const int n,
+        const int s_ne0, const int s_ne1, const int s_ne2, const int s_ne3, // for src ...
+        const int s_nb0, const int s_nb1, const int s_nb2, const int s_nb3, // for src ...
+        const int d_ne0, const int d_ne1, const int d_ne2, const int d_ne3, // for dst ...
+        const int d_nb0, const int d_nb1, const int d_nb2, const int d_nb3, // for dst ...
+        const int R) {
+    int index = threadIdx.x + blockIdx.x * blockDim.x;
+    if (index >= n) {
+        return;
+    }
+
+    int d0 = index % d_ne0;
+    int d1 = (index / d_ne0) % d_ne1;
+    int d2 = (index / (d_ne0 * d_ne1)) % d_ne2;
+    int d3 = (index / (d_ne0 * d_ne1 * d_ne2)) % d_ne3;
 
     // s_c = d_c*R*R + (d_h % R)*R + (d_w % R);    
     int s0 = d0/R; // W
@@ -100,7 +300,9 @@ static __global__ void shuffle_f32(const float * x, float * dst,
     int s2 = d2 * R * R + (d1 % R) * R + (d0 % R); // C
     int s3 = d3; // B
 
-    dst[index] = *(float *)((char *)x + s3 * nb03 + s2 * nb02 + s1 * nb01 + s0 * nb00);
+    int64_t s_offset = tensor_full_offset(s0, s1, s2, s3, s_nb0, s_nb1, s_nb2, s_nb3);
+    int64_t d_offset = tensor_full_offset(d0, d1, d2, d3, d_nb0, d_nb1, d_nb2, d_nb3);
+    *(float *)((char *)dst + d_offset) = *(float *)((char *)src + s_offset);
 }
 
 static __global__ void win_part_f32(const float * src, float * dst, const int n,
@@ -279,15 +481,69 @@ static void interpolate_f32_cuda(const float * x, float * dst,
         d_ne0, d_ne1, d_ne2, d_ne3, dim, sf0, sf1, sf2, sf3);
 }
 
+#define CUDA_GRID_SAMPLE_BLOCK_SIZE 256
+static void grid_sample_f32_cuda(const float * src, const float *grid, float * dst,
+        const int n, const int H, const int W,
+        const int s_nb0, const int s_nb1, const int s_nb2, const int s_nb3,
+        const int g_nb0, const int g_nb1, const int g_nb2, const int g_nb3,
+        const int d_ne0, const int d_ne1, const int d_ne2, const int d_ne3,
+        const int d_nb0, const int d_nb1, const int d_nb2, const int d_nb3,
+        cudaStream_t stream) {
 
-static void shuffle_f32_cuda(const float * x, float * dst,
-        const int nb00, const int nb01, const int nb02, const int nb03,
-        const int ne10, const int ne11, const int ne12, const int ne13,
+    int num_blocks = (n + CUDA_GRID_SAMPLE_BLOCK_SIZE - 1) / CUDA_GRID_SAMPLE_BLOCK_SIZE;
+
+    grid_sample_f32<<<num_blocks, CUDA_GRID_SAMPLE_BLOCK_SIZE, 0, stream>>>(src, grid, dst, 
+        n, H, W,
+        s_nb0, s_nb1, s_nb2, s_nb3, g_nb0, g_nb1, g_nb2, g_nb3,
+        d_ne0, d_ne1, d_ne2, d_ne3, d_nb0, d_nb1, d_nb2, d_nb3);
+}
+
+// dell_add
+#define CUDA_SOFT_SPLAT_BLOCK_SIZE 256
+static void soft_splat_f32_cuda(const float * src, const float *flow, float * dst,
+        const int n, const int H, const int W,
+        const int s_nb0, const int s_nb1, const int s_nb2, const int s_nb3,
+        const int f_nb0, const int f_nb1, const int f_nb2, const int f_nb3,
+        const int d_ne0, const int d_ne1, const int d_ne2, const int d_ne3,
+        const int d_nb0, const int d_nb1, const int d_nb2, const int d_nb3,
+        cudaStream_t stream) {
+
+    int num_blocks = (n + CUDA_SOFT_SPLAT_BLOCK_SIZE - 1) / CUDA_SOFT_SPLAT_BLOCK_SIZE;
+
+    soft_splat_f32<<<num_blocks, CUDA_SOFT_SPLAT_BLOCK_SIZE, 0, stream>>>(src, flow, dst, 
+        n, H, W,
+        s_nb0, s_nb1, s_nb2, s_nb3, f_nb0, f_nb1, f_nb2, f_nb3,
+        d_ne0, d_ne1, d_ne2, d_ne3, d_nb0, d_nb1, d_nb2, d_nb3);
+}
+
+#define CUDA_EULER_MOTION_BLOCK_SIZE 256
+static void euler_motion_f32_cuda(const float *flow, float * dst,
+        const int n, const int H, const int W, const int ntimes,
+        const int f_nb0, const int f_nb1, const int f_nb2, const int f_nb3,
+        const int d_ne0, const int d_ne1, const int d_ne2, const int d_ne3,
+        const int d_nb0, const int d_nb1, const int d_nb2, const int d_nb3,
+        cudaStream_t stream) {
+
+    int num_blocks = (n + CUDA_EULER_MOTION_BLOCK_SIZE - 1) / CUDA_EULER_MOTION_BLOCK_SIZE;
+
+    euler_motion_f32<<<num_blocks, CUDA_EULER_MOTION_BLOCK_SIZE, 0, stream>>>(flow, dst, 
+        n, H, W, ntimes, f_nb0, f_nb1, f_nb2, f_nb3,
+        d_ne0, d_ne1, d_ne2, d_ne3, d_nb0, d_nb1, d_nb2, d_nb3);
+}
+
+
+
+static void shuffle_f32_cuda(const float * x, float * dst, const int n,
+        const int s_ne0, const int s_ne1, const int s_ne2, const int s_ne3,
+        const int s_nb0, const int s_nb1, const int s_nb2, const int s_nb3,
+        const int d_ne0, const int d_ne1, const int d_ne2, const int d_ne3,
+        const int d_nb0, const int d_nb1, const int d_nb2, const int d_nb3,
         const int R,
         cudaStream_t stream) {
-    int dst_size = ne10 * ne11 * ne12 * ne13;
-    int num_blocks = (dst_size + CUDA_SHUFFLE_BLOCK_SIZE - 1) / CUDA_SHUFFLE_BLOCK_SIZE;
-    shuffle_f32<<<num_blocks, CUDA_SHUFFLE_BLOCK_SIZE,0,stream>>>(x, dst, nb00, nb01, nb02, nb03, ne10, ne11, ne12, ne13, R);
+    int num_blocks = (n + CUDA_SHUFFLE_BLOCK_SIZE - 1) / CUDA_SHUFFLE_BLOCK_SIZE;
+    shuffle_f32<<<num_blocks, CUDA_SHUFFLE_BLOCK_SIZE,0,stream>>>(x, dst, n,
+        s_ne0, s_ne1, s_ne2, s_ne3, s_nb0, s_nb1, s_nb2, s_nb3,
+        d_ne0, d_ne1, d_ne2, d_ne3, d_nb0, d_nb1, d_nb2, d_nb3, R);
 }
 
 #define CUDA_WIN_PART_BLOCK_SIZE 256
@@ -446,22 +702,89 @@ void ggml_cuda_op_interpolate(ggml_backend_cuda_context & ctx, ggml_tensor * dst
         dst->ne[0], dst->ne[1], dst->ne[2], dst->ne[3], dim, sf0, sf1, sf2, sf3, stream);
 }
 
-
-
-void ggml_cuda_op_shuffle(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+// dell_xxxx
+void ggml_cuda_op_grid_sample(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     const ggml_tensor * src0 = dst->src[0];
+    const ggml_tensor * grid = dst->src[1];
+
     const float * src0_d = (const float *)src0->data;
+    const float * grid_d = (const float *)grid->data;
     float * dst_d = (float *)dst->data;
     cudaStream_t stream = ctx.stream();
 
     GGML_ASSERT(src0->type == GGML_TYPE_F32);
+    GGML_ASSERT(grid->type == GGML_TYPE_F32);
     GGML_ASSERT( dst->type == GGML_TYPE_F32);
 
-    // torch convert from src0: (B, C*r*2, H, W) to dst: (B, C, H*r, W*r)
-    const int R = dst->ne[0]/src0->ne[0];
-    // const int R = dst->op_params[0];
+    grid_sample_f32_cuda(src0_d, grid_d, dst_d, 
+        ggml_nelements(dst), src0->ne[1] /*H*/, src0->ne[0] /*W*/, 
+        src0->nb[0], src0->nb[1], src0->nb[2], src0->nb[3],
+        grid->nb[0], grid->nb[1], grid->nb[2], grid->nb[3],
+        dst->ne[0], dst->ne[1], dst->ne[2], dst->ne[3], 
+        dst->nb[0], dst->nb[1], dst->nb[2], dst->nb[3], 
+        stream);
+}
 
-    shuffle_f32_cuda(src0_d, dst_d, src0->nb[0], src0->nb[1], src0->nb[2], src0->nb[3], dst->ne[0], dst->ne[1], dst->ne[2], dst->ne[3], R, stream);
+void ggml_cuda_op_soft_splat(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+    const ggml_tensor * src0 = dst->src[0];
+    const ggml_tensor * flow = dst->src[1];
+
+    const float * src0_d = (const float *)src0->data;
+    const float * flow_d = (const float *)flow->data;
+    float * dst_d = (float *)dst->data;
+    cudaStream_t stream = ctx.stream();
+
+    GGML_ASSERT(src0->type == GGML_TYPE_F32);
+    GGML_ASSERT(flow->type == GGML_TYPE_F32);
+    GGML_ASSERT( dst->type == GGML_TYPE_F32);
+
+    soft_splat_f32_cuda(src0_d, flow_d, dst_d, 
+        ggml_nelements(dst), src0->ne[1] /*H*/, src0->ne[0] /*W*/, 
+        src0->nb[0], src0->nb[1], src0->nb[2], src0->nb[3],
+        flow->nb[0], flow->nb[1], flow->nb[2], flow->nb[3],
+        dst->ne[0], dst->ne[1], dst->ne[2], dst->ne[3], 
+        dst->nb[0], dst->nb[1], dst->nb[2], dst->nb[3], 
+        stream);
+}
+
+void ggml_cuda_op_eluer_motion(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+    const ggml_tensor * flow = dst->src[0];
+    const float * flow_d = (const float *)flow->data;
+    float * dst_d = (float *)dst->data;
+    cudaStream_t stream = ctx.stream();
+
+    GGML_ASSERT(flow->type == GGML_TYPE_F32);
+    GGML_ASSERT( dst->type == GGML_TYPE_F32);
+    const int ntimes = dst->op_params[0];
+
+    euler_motion_f32_cuda(flow_d, dst_d, 
+        ggml_nelements(dst), dst->ne[1] /*H*/, dst->ne[0] /*W*/, ntimes,
+        flow->nb[0], flow->nb[1], flow->nb[2], flow->nb[3],
+        dst->ne[0], dst->ne[1], dst->ne[2], dst->ne[3], 
+        dst->nb[0], dst->nb[1], dst->nb[2], dst->nb[3], 
+        stream);
+}
+
+void ggml_cuda_op_shuffle(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+    const ggml_tensor * src = dst->src[0];
+    const float * src_d = (const float *)src->data;
+    float * dst_d = (float *)dst->data;
+    cudaStream_t stream = ctx.stream();
+
+    GGML_ASSERT(src->type == GGML_TYPE_F32);
+    GGML_ASSERT(dst->type == GGML_TYPE_F32);
+
+    // torch convert from src0: (B, C*r*2, H, W) to dst: (B, C, H*r, W*r)
+    // const int R = dst->ne[0]/src->ne[0];
+    const int R = dst->op_params[0];
+    GGML_ASSERT(R == (int)dst->ne[0]/src->ne[0]);
+
+    shuffle_f32_cuda(src_d, dst_d, ggml_nelements(dst),
+        src->ne[0], src->ne[1], src->ne[2], src->ne[3],
+        src->nb[0], src->nb[1], src->nb[2], src->nb[3],
+        dst->ne[0], dst->ne[1], dst->ne[2], dst->ne[3], 
+        dst->nb[0], dst->nb[1], dst->nb[2], dst->nb[3], 
+        R, stream);
 }
 
 // dell_xxxx

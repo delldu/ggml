@@ -353,3 +353,64 @@ void ggml_cuda_op_repeat_back(ggml_backend_cuda_context & ctx, ggml_tensor * dst
         } break;
     }
 }
+
+static __global__ void repeat_ext_f32(const float * src, float * dst, const int n,
+        const int s_nb0, const int s_nb1, const int s_nb2, const int s_nb3, // for src ...
+        const int d_ne0, const int d_ne1, const int d_ne2, const int d_ne3, // for dst ...
+        const int d_nb0, const int d_nb1, const int d_nb2, const int d_nb3,
+        const int n0, const int n1, const int n2, const int n3) { // repeat times 
+    int index = threadIdx.x + blockIdx.x * blockDim.x;
+    if (index >= n) {
+        return;
+    }
+
+    int d_0 = index % d_ne0; // W
+    int d_1 = (index / d_ne0) % d_ne1; // H
+    int d_2 = (index / (d_ne0 * d_ne1)) % d_ne2; // C
+    int d_3 = (index / (d_ne0 * d_ne1 * d_ne2)) % d_ne3; // B
+
+    int s_0 = d_0 % n0;
+    int s_1 = d_1 % n1;
+    int s_2 = d_2 % n2;
+    int s_3 = d_3 % n3;
+
+    int64_t s_offset = tensor_full_offset(s_0, s_1, s_2, s_3, s_nb0, s_nb1, s_nb2, s_nb3);
+    int64_t d_offset = tensor_full_offset(d_0, d_1, d_2, d_3, d_nb0, d_nb1, d_nb2, d_nb3);
+    *(float *)((char *)dst + d_offset) = *(float *)((char *)src + s_offset);
+}
+
+
+#define REPEAT_EXT_SAMPLE_BLOCK_SIZE 256
+static void repeat_ext_f32_cuda(const float * src, float * dst, const int n,
+        const int s_nb0, const int s_nb1, const int s_nb2, const int s_nb3,
+        const int d_ne0, const int d_ne1, const int d_ne2, const int d_ne3,
+        const int d_nb0, const int d_nb1, const int d_nb2, const int d_nb3,
+        const int n0, const int n1, const int n2, const int n3,
+        cudaStream_t stream) {
+
+    int num_blocks = (n + REPEAT_EXT_SAMPLE_BLOCK_SIZE - 1) / REPEAT_EXT_SAMPLE_BLOCK_SIZE;
+
+    repeat_ext_f32<<<num_blocks, REPEAT_EXT_SAMPLE_BLOCK_SIZE, 0, stream>>>(src, dst, n,
+        s_nb0, s_nb1, s_nb2, s_nb3, d_ne0, d_ne1, d_ne2, d_ne3, d_nb0, d_nb1, d_nb2, d_nb3, n0, n1, n2, n3);
+}
+
+void ggml_cuda_op_repeat_ext(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+    const ggml_tensor *src = dst->src[0];
+    const float * src_d = (const float *)src->data;
+    float * dst_d = (float *)dst->data;
+    cudaStream_t stream = ctx.stream();
+
+    GGML_ASSERT(src->type == GGML_TYPE_F32);
+    GGML_ASSERT(dst->type == GGML_TYPE_F32);
+
+    const int n0 = dst->op_params[0];
+    const int n1 = dst->op_params[1];
+    const int n2 = dst->op_params[2];
+    const int n3 = dst->op_params[3];
+
+    repeat_ext_f32_cuda(src_d, dst_d, ggml_nelements(dst), 
+        src->nb[0], src->nb[1], src->nb[2], src->nb[3],
+        dst->ne[0], dst->ne[1], dst->ne[2], dst->ne[3], 
+        dst->nb[0], dst->nb[1], dst->nb[2], dst->nb[3], 
+        n0, n1, n2, n3, stream);
+}

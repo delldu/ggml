@@ -2184,6 +2184,9 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
         case GGML_OP_REPEAT_BACK:
             ggml_cuda_op_repeat_back(ctx, dst);
             break;
+        case GGML_OP_REPEAT_EXT:
+            ggml_cuda_op_repeat_ext(ctx, dst);
+            break;
         case GGML_OP_GET_ROWS:
             ggml_cuda_op_get_rows(ctx, dst);
             break;
@@ -2251,6 +2254,9 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
         case GGML_OP_NORM:
             ggml_cuda_op_norm(ctx, dst);
             break;
+        case GGML_OP_NORM_EXT:
+            ggml_cuda_op_norm_ext(ctx, dst);
+            break;
         case GGML_OP_GROUP_NORM:
             ggml_cuda_op_group_norm(ctx, dst);
             break;
@@ -2262,6 +2268,15 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
             break;
         case GGML_OP_INTERPOLATE:
             ggml_cuda_op_interpolate(ctx, dst);
+            break;
+        case GGML_OP_GRID_SAMPLE:
+            ggml_cuda_op_grid_sample(ctx, dst);
+            break;
+        case GGML_OP_SOFT_SPLAT:
+            ggml_cuda_op_soft_splat(ctx, dst);
+            break;
+        case GGML_OP_EULER_MOTION:
+            ggml_cuda_op_eluer_motion(ctx, dst);
             break;
         case GGML_OP_SHUFFLE:
             ggml_cuda_op_shuffle(ctx, dst);
@@ -2286,6 +2301,9 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
             break;
         case GGML_OP_REPLICATION_PAD2D:
             ggml_cuda_op_replication_pad2d(ctx, dst);
+            break;
+        case GGML_OP_REFLECTION_PAD2D:
+            ggml_cuda_op_reflection_pad2d(ctx, dst);
             break;
         case GGML_OP_DECONV_PAD2D:
             ggml_cuda_op_deconv_pad2d(ctx, dst); 
@@ -2357,6 +2375,9 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
         case GGML_OP_DIAG_MASK_INF:
             ggml_cuda_op_diag_mask_inf(ctx, dst);
             break;
+        case GGML_OP_SOFTMAX:
+            ggml_cuda_op_softmax(ctx, dst);
+            break;
         case GGML_OP_SOFT_MAX:
             ggml_cuda_op_soft_max(ctx, dst);
             break;
@@ -2395,6 +2416,9 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
             break;
         case GGML_OP_MEAN:
             ggml_cuda_op_mean(ctx, dst);
+            break;
+        case GGML_OP_MEAN_EXT:
+            ggml_cuda_op_mean_ext(ctx, dst);
             break;
         case GGML_OP_ARGMAX_EXT:
             ggml_cuda_op_argmax_ext(ctx, dst);
@@ -2972,6 +2996,10 @@ GGML_CALL static bool ggml_backend_cuda_supports_op(ggml_backend_t backend, cons
             } break;
         case GGML_OP_REPEAT_BACK:
                 return op->type == GGML_TYPE_F32 && op->src[0]->ne[3] == 1;
+        case GGML_OP_REPEAT_EXT:
+            {
+                return op->src[0]->type == GGML_TYPE_F32;
+            } break;
         case GGML_OP_CONCAT:
             {
                 ggml_type src0_type = op->src[0]->type;
@@ -3007,6 +3035,7 @@ GGML_CALL static bool ggml_backend_cuda_supports_op(ggml_backend_t backend, cons
         case GGML_OP_CONT:
             return op->src[0]->type != GGML_TYPE_BF16;
         case GGML_OP_DIAG_MASK_INF:
+        case GGML_OP_SOFTMAX:
         case GGML_OP_SOFT_MAX:
             return true;
         case GGML_OP_ROPE:
@@ -3025,6 +3054,8 @@ GGML_CALL static bool ggml_backend_cuda_supports_op(ggml_backend_t backend, cons
         case GGML_OP_GROUP_NORM:
         case GGML_OP_UPSCALE:
         case GGML_OP_INTERPOLATE:
+        case GGML_OP_GRID_SAMPLE:
+        case GGML_OP_SOFT_SPLAT:
         case GGML_OP_PAD:
         case GGML_OP_ARANGE:
         case GGML_OP_TIMESTEP_EMBEDDING:

@@ -1,11 +1,9 @@
 #pragma once
 #define CheckPoint(fmt, arg...) printf("# CheckPoint: %d(%s): " fmt "\n", (int)__LINE__, __FILE__, ##arg)
 
-#define TENSOR_BYTES_OFFSET(t, i0, i1, i2, i3) \
+// dell_xxxx
+#define tensor_offset(t, i0, i1, i2, i3) \
     ((i0)*(t)->nb[0] + (i1)*(t)->nb[1] + (i2)*(t)->nb[2] + (i3)*(t)->nb[3])
-
-#define TENSOR_LOGIC_OFFSET(t, i0, i1, i2, i3) \
-    ((i0) + (i1)*((t)->ne[0]) + (i2)*((t)->ne[1])*((t)->ne[0]) + (i3)*((t)->ne[2])*((t)->ne[1])*((t)->ne[0]))
 
 #define tensor_foreach_d0(t) \
     for (int64_t i1 = 0; i1 < (t)->ne[1]; i1++) \
@@ -495,13 +493,16 @@ extern "C" {
         GGML_OP_CUMSUM,
         GGML_OP_NORM2,
         GGML_OP_MEAN,
+        GGML_OP_MEAN_EXT,
         GGML_OP_ARGMAX,
         GGML_OP_ARGMAX_EXT,
         GGML_OP_REPEAT,
         GGML_OP_REPEAT_BACK,
+        GGML_OP_REPEAT_EXT,
         GGML_OP_CONCAT,
         GGML_OP_SILU_BACK,
         GGML_OP_NORM, // normalize
+        GGML_OP_NORM_EXT,
         GGML_OP_RMS_NORM,
         GGML_OP_RMS_NORM_BACK,
         GGML_OP_GROUP_NORM,
@@ -523,6 +524,7 @@ extern "C" {
         GGML_OP_DIAG,
         GGML_OP_DIAG_MASK_INF,
         GGML_OP_DIAG_MASK_ZERO,
+        GGML_OP_SOFTMAX,
         GGML_OP_SOFT_MAX,
         GGML_OP_SOFT_MAX_BACK,
         GGML_OP_ROPE,
@@ -539,6 +541,9 @@ extern "C" {
         GGML_OP_POOL_2D_BACK,
         GGML_OP_UPSCALE, // nearest interpolate
         GGML_OP_INTERPOLATE, // line interpolate
+        GGML_OP_GRID_SAMPLE,
+        GGML_OP_SOFT_SPLAT,
+        GGML_OP_EULER_MOTION,
         GGML_OP_SHUFFLE, // pixel shuffle
         GGML_OP_FLIP,
         GGML_OP_SCATTER,
@@ -547,12 +552,12 @@ extern "C" {
         GGML_OP_IRFFT2, // https://pytorch.org/docs/stable/generated/torch.fft.irfft2.html
         GGML_OP_PAD,
         GGML_OP_REPLICATION_PAD2D, // torch.nn.ReplicationPad2d
+        GGML_OP_REFLECTION_PAD2D,
         GGML_OP_DECONV_PAD2D, // for ConvTranspose2d
         GGML_OP_ARANGE,
         GGML_OP_TIMESTEP_EMBEDDING,
         GGML_OP_ARGSORT,
         GGML_OP_LEAKY_RELU,
-
         GGML_OP_FLASH_ATTN_EXT,
         GGML_OP_FLASH_ATTN_BACK,
         GGML_OP_SSM_CONV,
@@ -1068,18 +1073,17 @@ extern "C" {
             struct ggml_context * ctx,
             struct ggml_tensor  * a);
 
-    // // dell_add
-    // GGML_API struct ggml_tensor * ggml_mean_ext(
-    //         struct ggml_context * ctx,
-    //         struct ggml_tensor  * a,
-    //         int                   dim);
+    GGML_API struct ggml_tensor * ggml_mean_ext(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            int                   dim);
 
     // argmax along rows
     GGML_API struct ggml_tensor * ggml_argmax(
             struct ggml_context * ctx,
             struct ggml_tensor  * a);
 
-    // dell_add
+    // dell_xxxx
     GGML_API struct ggml_tensor * ggml_argmax_ext(
             struct ggml_context * ctx,
             struct ggml_tensor  * a,
@@ -1099,6 +1103,15 @@ extern "C" {
             struct ggml_tensor  * a,
             struct ggml_tensor  * b);
 
+    // dell_xxxx
+    GGML_API struct ggml_tensor * ggml_repeat_ext(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            int                   n0, // repeat times on dims
+            int                   n1,
+            int                   n2,
+            int                   n3);
+
     // concat a and b along dim
     // used in stable-diffusion
     GGML_API struct ggml_tensor * ggml_concat(
@@ -1106,6 +1119,13 @@ extern "C" {
             struct ggml_tensor  * a,
             struct ggml_tensor  * b,
             int                   dim);
+
+    // dell_add
+    // https://pytorch.org/docs/stable/generated/torch.cat.html#torch.cat    
+    GGML_API struct ggml_tensor * ggml_cat(
+            struct ggml_context * ctx,
+            int                   n, ...); // ... last var is dim
+
 
     GGML_API struct ggml_tensor * ggml_abs(
             struct ggml_context * ctx,
@@ -1234,6 +1254,14 @@ extern "C" {
             struct ggml_context * ctx,
             struct ggml_tensor  * a,
             float                 eps);
+
+    // dell_xxxx
+    GGML_API struct ggml_tensor * ggml_norm_ext(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            int                   dim,
+            float                 eps);
+
 
     GGML_API struct ggml_tensor * ggml_rms_norm(
             struct ggml_context * ctx,
@@ -1533,11 +1561,11 @@ extern "C" {
             struct ggml_context * ctx,
             struct ggml_tensor  * a);
 
-    // // dell_add
-    // GGML_API struct ggml_tensor * ggml_softmax(
-    //         struct ggml_context * ctx,
-    //         struct ggml_tensor  * a,
-    //         int                   dim);
+    // dell_xxxx
+    GGML_API struct ggml_tensor * ggml_softmax(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            int                   dim);
 
     // in-place, returns view(a)
     GGML_API struct ggml_tensor * ggml_soft_max_inplace(
@@ -1766,7 +1794,6 @@ extern "C" {
             int                   d0,  // dilation dimension 0
             int                   d1); // dilation dimension 1
 
-
     // kernel size is a->ne[0] x a->ne[1]
     // stride is equal to kernel size
     // padding is zero
@@ -1864,6 +1891,27 @@ extern "C" {
             int                   dim,
             int                   ns); // new size
 
+    // dell_xxxx
+    GGML_API struct ggml_tensor * ggml_grid_sample(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            struct ggml_tensor  * grid);
+
+    // dell_xxxx
+    // input:
+    //      x: [B, C, H, W]
+    //      flow: [B, 2, H, W]
+    // output: [B, C, H, W]
+    GGML_API struct ggml_tensor * ggml_soft_splat(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * x,
+            struct ggml_tensor  * flow);
+
+    // dell_add
+    GGML_API struct ggml_tensor * ggml_euler_motion(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * flow,
+            int                   frame_index);
 
     // dell_xxxx
     GGML_API struct ggml_tensor * ggml_shuffle(
@@ -1924,6 +1972,16 @@ extern "C" {
             int                  right,
             int                  top,
             int                  bottom);
+
+    // dell_xxxx
+    GGML_API struct ggml_tensor * ggml_reflection_pad2d(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            int                  left,
+            int                  right,
+            int                  top,
+            int                  bottom);
+
 
     // dell_xxxx
     GGML_API struct ggml_tensor * ggml_deconv_pad2d(
