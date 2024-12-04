@@ -153,7 +153,29 @@ static __global__ void grid_sample_f32(const float * src, const float *grid, flo
         w_x1y1 * v_x1y1 + w_x2y1 * v_x2y1 + w_x1y2 * v_x1y2 + w_x2y2 * v_x2y2;
 }
 
-// dell_add
+static __global__ void grid_mesh_f32(float * dst, const int n, const int norm,
+        const int d_ne0, const int d_ne1, const int d_ne2, const int d_ne3, // for dst ...
+        const int d_nb0, const int d_nb1, const int d_nb2, const int d_nb3) { // for dst ...
+    int index = threadIdx.x + blockIdx.x * blockDim.x;
+    if (index >= n) {
+        return;
+    }
+
+    int d_0 = index % d_ne0; // W
+    int d_1 = (index / d_ne0) % d_ne1; // H
+    int d_2 = (index / (d_ne0 * d_ne1)) % d_ne2; // C
+    int d_3 = (index / (d_ne0 * d_ne1 * d_ne2)) % d_ne3; // B
+
+    int64_t d_offset;
+    d_offset = tensor_full_offset(d_0, d_1, 0 /*d_2 -- C -- for x*/, d_3, d_nb0, d_nb1, d_nb2, d_nb3);
+    *(float *)((char *)dst + d_offset) = (norm)?(float)d_0/d_ne0 : (float)d_0; // w
+
+    d_offset = tensor_full_offset(d_0, d_1, 1 /*d_2 -- C -- for y*/, d_3, d_nb0, d_nb1, d_nb2, d_nb3);
+    *(float *)((char *)dst + d_offset) = (norm)?(float)d_1/d_ne1 : (float)d_1; // h
+}
+
+
+// dell_xxxx
 static __global__ void soft_splat_f32(const float * src, const float *flow, float * dst,
         const int n, const int H, const int W,
         const int s_nb0, const int s_nb1, const int s_nb2, const int s_nb3, // for src ...
@@ -498,7 +520,21 @@ static void grid_sample_f32_cuda(const float * src, const float *grid, float * d
         d_ne0, d_ne1, d_ne2, d_ne3, d_nb0, d_nb1, d_nb2, d_nb3);
 }
 
-// dell_add
+
+#define CUDA_GRID_MESH_BLOCK_SIZE 256
+static void grid_mesh_f32_cuda(float * dst, const int n, const int norm,
+        const int d_ne0, const int d_ne1, const int d_ne2, const int d_ne3,
+        const int d_nb0, const int d_nb1, const int d_nb2, const int d_nb3,
+        cudaStream_t stream) {
+
+    int num_blocks = (n + CUDA_GRID_MESH_BLOCK_SIZE - 1) / CUDA_GRID_MESH_BLOCK_SIZE;
+
+    grid_mesh_f32<<<num_blocks, CUDA_GRID_MESH_BLOCK_SIZE, 0, stream>>>(dst, 
+        n, norm, d_ne0, d_ne1, d_ne2, d_ne3, d_nb0, d_nb1, d_nb2, d_nb3);
+}
+
+
+// dell_xxxx
 #define CUDA_SOFT_SPLAT_BLOCK_SIZE 256
 static void soft_splat_f32_cuda(const float * src, const float *flow, float * dst,
         const int n, const int H, const int W,
@@ -531,8 +567,6 @@ static void euler_motion_f32_cuda(const float *flow, float * dst,
         d_ne0, d_ne1, d_ne2, d_ne3, d_nb0, d_nb1, d_nb2, d_nb3);
 }
 
-
-
 static void shuffle_f32_cuda(const float * x, float * dst, const int n,
         const int s_ne0, const int s_ne1, const int s_ne2, const int s_ne3,
         const int s_nb0, const int s_nb1, const int s_nb2, const int s_nb3,
@@ -547,8 +581,6 @@ static void shuffle_f32_cuda(const float * x, float * dst, const int n,
 }
 
 #define CUDA_WIN_PART_BLOCK_SIZE 256
-
-
 static void win_part_f32_cuda(const float * src, float * dst, const int n, 
         const int s_ne0, const int s_ne1, const int s_ne2, const int s_ne3, // for src ...
         const int d_ne0, const int d_ne1, const int d_ne2, const int d_ne3, // for dst ...
@@ -724,6 +756,21 @@ void ggml_cuda_op_grid_sample(ggml_backend_cuda_context & ctx, ggml_tensor * dst
         dst->nb[0], dst->nb[1], dst->nb[2], dst->nb[3], 
         stream);
 }
+
+// dell_add
+void ggml_cuda_op_grid_mesh(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+    float * dst_d = (float *)dst->data;
+    cudaStream_t stream = ctx.stream();
+    GGML_ASSERT( dst->type == GGML_TYPE_F32);
+
+    const int norm = dst->op_params[0]; // 1 -- yes or no
+
+    grid_mesh_f32_cuda(dst_d, ggml_nelements(dst), norm, 
+        dst->ne[0], dst->ne[1], dst->ne[2], dst->ne[3], 
+        dst->nb[0], dst->nb[1], dst->nb[2], dst->nb[3], 
+        stream);
+}
+
 
 void ggml_cuda_op_soft_splat(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     const ggml_tensor * src0 = dst->src[0];

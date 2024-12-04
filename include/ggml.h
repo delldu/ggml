@@ -254,7 +254,7 @@
 #define GGML_MAX_DIMS           4
 #define GGML_MAX_PARAMS         2048
 #define GGML_MAX_CONTEXTS       64
-#define GGML_MAX_SRC            10
+#define GGML_MAX_SRC            32 // 10
 #ifndef GGML_MAX_NAME
 #define GGML_MAX_NAME           128
 #define GGML_MAX_N_THREADS      512
@@ -500,6 +500,7 @@ extern "C" {
         GGML_OP_REPEAT_BACK,
         GGML_OP_REPEAT_EXT,
         GGML_OP_CONCAT,
+        GGML_OP_CAT,
         GGML_OP_SILU_BACK,
         GGML_OP_NORM, // normalize
         GGML_OP_NORM_EXT,
@@ -541,6 +542,7 @@ extern "C" {
         GGML_OP_POOL_2D_BACK,
         GGML_OP_UPSCALE, // nearest interpolate
         GGML_OP_INTERPOLATE, // line interpolate
+        GGML_OP_GRID_MESH,
         GGML_OP_GRID_SAMPLE,
         GGML_OP_SOFT_SPLAT,
         GGML_OP_EULER_MOTION,
@@ -1073,6 +1075,7 @@ extern "C" {
             struct ggml_context * ctx,
             struct ggml_tensor  * a);
 
+    // dell_xxxx
     GGML_API struct ggml_tensor * ggml_mean_ext(
             struct ggml_context * ctx,
             struct ggml_tensor  * a,
@@ -1892,6 +1895,14 @@ extern "C" {
             int                   ns); // new size
 
     // dell_xxxx
+    GGML_API struct ggml_tensor * ggml_grid_mesh(
+            struct ggml_context * ctx,
+            int                   B,
+            int                   H,
+            int                   W,
+            int                   norm);
+
+    // dell_xxxx
     GGML_API struct ggml_tensor * ggml_grid_sample(
             struct ggml_context * ctx,
             struct ggml_tensor  * a,
@@ -1907,7 +1918,7 @@ extern "C" {
             struct ggml_tensor  * x,
             struct ggml_tensor  * flow);
 
-    // dell_add
+    // dell_xxxx
     GGML_API struct ggml_tensor * ggml_euler_motion(
             struct ggml_context * ctx,
             struct ggml_tensor  * flow,

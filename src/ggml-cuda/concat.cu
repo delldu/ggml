@@ -194,3 +194,100 @@ void ggml_cuda_op_concat(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
                 dst->nb[0],  dst->nb[1],  dst->nb[2],  dst->nb[3], dim);
     }
 }
+
+
+static __global__ void cat_f32(const float * src, float * dst,
+        const int n, const int dim, const int dim_c,
+        const int s_ne0, const int s_ne1, const int s_ne2, const int s_ne3, // for src ...
+        const int s_nb0, const int s_nb1, const int s_nb2, const int s_nb3, // for dst ...
+        const int d_nb0, const int d_nb1, const int d_nb2, const int d_nb3) { // for dst ...
+    int index = threadIdx.x + blockIdx.x * blockDim.x;
+    if (index >= n) {
+        return;
+    }
+
+    int s_0 = index % s_ne0; // W
+    int s_1 = (index / s_ne0) % s_ne1; // H
+    int s_2 = (index / (s_ne0 * s_ne1)) % s_ne2; // C
+    int s_3 = (index / (s_ne0 * s_ne1 * s_ne2)) % s_ne3; // B
+    int64_t s_offset, d_offset;
+
+    s_offset = tensor_full_offset(s_0, s_1, s_2, s_3, s_nb0, s_nb1, s_nb2, s_nb3);
+    if (dim == 0) {
+        d_offset = tensor_full_offset(s_0 + dim_c, s_1, s_2, s_3, d_nb0, d_nb1, d_nb2, d_nb3);
+
+        *(float *)((char *)dst + d_offset) = *(float *)((char *)src + s_offset);
+        return;
+    }
+
+    if (dim == 1) {
+        d_offset = tensor_full_offset(s_0, s_1 + dim_c, s_2, s_3, d_nb0, d_nb1, d_nb2, d_nb3);
+
+        *(float *)((char *)dst + d_offset) = *(float *)((char *)src + s_offset);
+        return;
+    }
+
+    if (dim == 2) {
+        d_offset = tensor_full_offset(s_0, s_1, s_2 + dim_c, s_3, d_nb0, d_nb1, d_nb2, d_nb3);
+        *(float *)((char *)dst + d_offset) = *(float *)((char *)src + s_offset);
+        return;
+    }
+
+    if (dim == 3) {
+        d_offset = tensor_full_offset(s_0, s_1, s_2, s_3 + dim_c, d_nb0, d_nb1, d_nb2, d_nb3);
+        *(float *)((char *)dst + d_offset) = *(float *)((char *)src + s_offset);
+        return;
+    }
+
+    // GGML_ASSERT(dim >= 0 && dim < 4);
+}
+
+
+
+#define CUDA_CAT_BLOCK_SIZE 256
+static void cat_f32_cuda(const float * src, float * dst,
+        const int n, const int dim, const int dim_c,
+        const int s_ne0, const int s_ne1, const int s_ne2, const int s_ne3,
+        const int s_nb0, const int s_nb1, const int s_nb2, const int s_nb3,
+        const int d_nb0, const int d_nb1, const int d_nb2, const int d_nb3,
+        cudaStream_t stream) {
+
+    int num_blocks = (n + CUDA_CAT_BLOCK_SIZE - 1) / CUDA_CAT_BLOCK_SIZE;
+
+    cat_f32<<<num_blocks, CUDA_CAT_BLOCK_SIZE, 0, stream>>>(src, dst, 
+        n, dim, dim_c,
+        s_ne0, s_ne1, s_ne2, s_ne3, 
+        s_nb0, s_nb1, s_nb2, s_nb3, 
+        d_nb0, d_nb1, d_nb2, d_nb3);
+}
+
+// dell_add
+void ggml_cuda_op_cat(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+    GGML_ASSERT(dst->type  == GGML_TYPE_F32);
+
+    float * dst_d = (float *)dst->data;
+    cudaStream_t stream = ctx.stream();
+
+    const int32_t n = ((int32_t *) dst->op_params)[0];
+    const int32_t dim = ((int32_t *) dst->op_params)[1];
+
+    int dim_c = 0;
+    ggml_tensor *src;
+
+    for (int i = 0; i < n; i++) {
+        src = dst->src[i];
+        const float * src_d = (const float *)src->data;
+
+        cat_f32_cuda(src_d, dst_d, 
+            ggml_nelements(src), dim, dim_c,
+            src->ne[0], src->ne[1], src->ne[2], src->ne[3],
+            src->nb[0], src->nb[1], src->nb[2], src->nb[3],
+            dst->nb[0], dst->nb[1], dst->nb[2], dst->nb[3], 
+            stream);
+
+        CUDA_CHECK(cudaDeviceSynchronize());
+        CUDA_CHECK(cudaGetLastError());
+
+        dim_c += src->ne[dim];
+    }
+}

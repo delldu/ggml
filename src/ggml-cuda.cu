@@ -2263,11 +2263,17 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
         case GGML_OP_CONCAT:
             ggml_cuda_op_concat(ctx, dst);
             break;
+        case GGML_OP_CAT:
+            ggml_cuda_op_cat(ctx, dst);
+            break;
         case GGML_OP_UPSCALE:
             ggml_cuda_op_upscale(ctx, dst);
             break;
         case GGML_OP_INTERPOLATE:
             ggml_cuda_op_interpolate(ctx, dst);
+            break;
+        case GGML_OP_GRID_MESH:
+            ggml_cuda_op_grid_mesh(ctx, dst);
             break;
         case GGML_OP_GRID_SAMPLE:
             ggml_cuda_op_grid_sample(ctx, dst);
@@ -3005,6 +3011,10 @@ GGML_CALL static bool ggml_backend_cuda_supports_op(ggml_backend_t backend, cons
                 ggml_type src0_type = op->src[0]->type;
                 return src0_type != GGML_TYPE_I32 && src0_type != GGML_TYPE_I16;
             } break;
+        case GGML_OP_CAT:
+            {
+                return op->src[0]->type == GGML_TYPE_F32;
+            } break;
         case GGML_OP_CONV_TRANSPOSE_1D:
             {
                 ggml_type src0_type = op->src[0]->type;
@@ -3055,7 +3065,9 @@ GGML_CALL static bool ggml_backend_cuda_supports_op(ggml_backend_t backend, cons
         case GGML_OP_UPSCALE:
         case GGML_OP_INTERPOLATE:
         case GGML_OP_GRID_SAMPLE:
+        case GGML_OP_GRID_MESH:
         case GGML_OP_SOFT_SPLAT:
+        case GGML_OP_EULER_MOTION:
         case GGML_OP_PAD:
         case GGML_OP_ARANGE:
         case GGML_OP_TIMESTEP_EMBEDDING:
