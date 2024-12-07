@@ -107,17 +107,17 @@ static __global__ void grid_sample_f32(const float * src, const float *grid, flo
     int64_t g_offset, src_offset, dst_offset;
 
     // grid[b, h, w, 0]
-    g_offset = tensor_full_offset(0/*for x*/, d_0/*Wout*/, d_1 /*Hout*/, 0/*B*/, g_nb0, g_nb1, g_nb2, g_nb3);
+    g_offset = tensor_full_offset(0/*for x*/, d_0/*Wout*/, d_1 /*Hout*/, d_3/*B*/, g_nb0, g_nb1, g_nb2, g_nb3);
     float x0 = *(float *)((char *)grid + g_offset);
 
     // grid[b, h, w, 1]
-    g_offset = tensor_full_offset(1/*for y*/, d_0/*Wout*/, d_1 /*Hout*/, 0/*B*/, g_nb0, g_nb1, g_nb2, g_nb3);
+    g_offset = tensor_full_offset(1/*for y*/, d_0/*Wout*/, d_1 /*Hout*/, d_3/*B*/, g_nb0, g_nb1, g_nb2, g_nb3);
     float y0 = *(float *)((char *)grid + g_offset);
 
     // Going on tensor src 
     // because x0 in [-1.0, 1.0], y0 in [-1.0, 1.0], so we do (x0 + 1.0)/2.0 ...
-    float fx = (x0 + 1.0f)/2.0f * W;
-    float fy = (y0 + 1.0f)/2.0f * H;
+    float fx = (x0 + 1.0f)/2.0f * (W - 1);
+    float fy = (y0 + 1.0f)/2.0f * (H - 1);
 
     int x1 = (int)floor(fx);
     int y1 = (int)floor(fy);
@@ -163,7 +163,7 @@ static __global__ void grid_mesh_f32(float * dst, const int n, const int norm,
 
     int d_0 = index % d_ne0; // W
     int d_1 = (index / d_ne0) % d_ne1; // H
-    int d_2 = (index / (d_ne0 * d_ne1)) % d_ne2; // C
+    // int d_2 = (index / (d_ne0 * d_ne1)) % d_ne2; // C
     int d_3 = (index / (d_ne0 * d_ne1 * d_ne2)) % d_ne3; // B
 
     int64_t d_offset;

@@ -369,10 +369,10 @@ static __global__ void repeat_ext_f32(const float * src, float * dst, const int 
     int d_2 = (index / (d_ne0 * d_ne1)) % d_ne2; // C
     int d_3 = (index / (d_ne0 * d_ne1 * d_ne2)) % d_ne3; // B
 
-    int s_0 = d_0 % n0;
-    int s_1 = d_1 % n1;
-    int s_2 = d_2 % n2;
-    int s_3 = d_3 % n3;
+    int s_0 = d_0 / n0;
+    int s_1 = d_1 / n1;
+    int s_2 = d_2 / n2;
+    int s_3 = d_3 / n3;
 
     int64_t s_offset = tensor_full_offset(s_0, s_1, s_2, s_3, s_nb0, s_nb1, s_nb2, s_nb3);
     int64_t d_offset = tensor_full_offset(d_0, d_1, d_2, d_3, d_nb0, d_nb1, d_nb2, d_nb3);

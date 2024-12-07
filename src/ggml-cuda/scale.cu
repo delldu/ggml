@@ -23,7 +23,7 @@ void ggml_cuda_op_scale(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
 
     GGML_ASSERT(src0->type == GGML_TYPE_F32);
     GGML_ASSERT( dst->type == GGML_TYPE_F32);
-
+    
     float scale;
     memcpy(&scale, dst->op_params, sizeof(float));
 
