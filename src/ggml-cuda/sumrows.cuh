@@ -8,3 +8,9 @@ void ggml_cuda_op_mean_ext(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
 void ggml_cuda_op_cumsum(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
 void ggml_cuda_op_norm2(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
 void ggml_cuda_op_argmax_ext(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
+
+void ggml_cuda_op_corr(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
+void ggml_cuda_op_global_attn(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
+
+void ggml_cuda_op_max(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
+void ggml_cuda_op_min(ggml_backend_cuda_context & ctx, ggml_tensor * dst);

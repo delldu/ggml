@@ -147,32 +147,13 @@ static __global__ void grid_sample_f32(const float * src, const float *grid, flo
     src_offset = tensor_full_offset(x2 /*w*/, y2 /*h*/, d_2 /*c*/, d_3 /*b*/, s_nb0, s_nb1, s_nb2, s_nb3);
     float v_x2y2 = *(float *)((char *)src + src_offset);
 
+    float v = w_x1y1 * v_x1y1 + w_x2y1 * v_x2y1 + w_x1y2 * v_x1y2 + w_x2y2 * v_x2y2;
+
     // ----------------------------------------------------------------------------
     dst_offset = tensor_full_offset(d_0, d_1, d_2, d_3, d_nb0, d_nb1, d_nb2, d_nb3);
-    *(float *)((char *)dst + dst_offset) = \
-        w_x1y1 * v_x1y1 + w_x2y1 * v_x2y1 + w_x1y2 * v_x1y2 + w_x2y2 * v_x2y2;
+    *(float *)((char *)dst + dst_offset) = v;
 }
 
-static __global__ void grid_mesh_f32(float * dst, const int n, const int norm,
-        const int d_ne0, const int d_ne1, const int d_ne2, const int d_ne3, // for dst ...
-        const int d_nb0, const int d_nb1, const int d_nb2, const int d_nb3) { // for dst ...
-    int index = threadIdx.x + blockIdx.x * blockDim.x;
-    if (index >= n) {
-        return;
-    }
-
-    int d_0 = index % d_ne0; // W
-    int d_1 = (index / d_ne0) % d_ne1; // H
-    // int d_2 = (index / (d_ne0 * d_ne1)) % d_ne2; // C
-    int d_3 = (index / (d_ne0 * d_ne1 * d_ne2)) % d_ne3; // B
-
-    int64_t d_offset;
-    d_offset = tensor_full_offset(d_0, d_1, 0 /*d_2 -- C -- for x*/, d_3, d_nb0, d_nb1, d_nb2, d_nb3);
-    *(float *)((char *)dst + d_offset) = (norm)?(float)d_0/d_ne0 : (float)d_0; // w
-
-    d_offset = tensor_full_offset(d_0, d_1, 1 /*d_2 -- C -- for y*/, d_3, d_nb0, d_nb1, d_nb2, d_nb3);
-    *(float *)((char *)dst + d_offset) = (norm)?(float)d_1/d_ne1 : (float)d_1; // h
-}
 
 
 // dell_xxxx
@@ -520,20 +501,6 @@ static void grid_sample_f32_cuda(const float * src, const float *grid, float * d
         d_ne0, d_ne1, d_ne2, d_ne3, d_nb0, d_nb1, d_nb2, d_nb3);
 }
 
-
-#define CUDA_GRID_MESH_BLOCK_SIZE 256
-static void grid_mesh_f32_cuda(float * dst, const int n, const int norm,
-        const int d_ne0, const int d_ne1, const int d_ne2, const int d_ne3,
-        const int d_nb0, const int d_nb1, const int d_nb2, const int d_nb3,
-        cudaStream_t stream) {
-
-    int num_blocks = (n + CUDA_GRID_MESH_BLOCK_SIZE - 1) / CUDA_GRID_MESH_BLOCK_SIZE;
-
-    grid_mesh_f32<<<num_blocks, CUDA_GRID_MESH_BLOCK_SIZE, 0, stream>>>(dst, 
-        n, norm, d_ne0, d_ne1, d_ne2, d_ne3, d_nb0, d_nb1, d_nb2, d_nb3);
-}
-
-
 // dell_xxxx
 #define CUDA_SOFT_SPLAT_BLOCK_SIZE 256
 static void soft_splat_f32_cuda(const float * src, const float *flow, float * dst,
@@ -757,7 +724,42 @@ void ggml_cuda_op_grid_sample(ggml_backend_cuda_context & ctx, ggml_tensor * dst
         stream);
 }
 
-// dell_add
+// dell_xxxx
+static __global__ void grid_mesh_f32(float * dst, const int n, const int norm,
+        const int d_ne0, const int d_ne1, const int d_ne2, const int d_ne3, // for dst ...
+        const int d_nb0, const int d_nb1, const int d_nb2, const int d_nb3) { // for dst ...
+    int index = threadIdx.x + blockIdx.x * blockDim.x;
+    if (index >= n) {
+        return;
+    }
+    // dst shape: [2, W, H, B]
+
+    // int d_0 = index % d_ne0; // 2
+    int d_1 = (index / d_ne0) % d_ne1; // W
+    int d_2 = (index / (d_ne0 * d_ne1)) % d_ne2; // H
+    int d_3 = (index / (d_ne0 * d_ne1 * d_ne2)) % d_ne3; // B
+
+    int64_t d_offset;
+    d_offset = tensor_full_offset(0 /*d_0 -- C -- for x*/, d_1, d_2, d_3, d_nb0, d_nb1, d_nb2, d_nb3);
+    *(float *)((char *)dst + d_offset) = (norm)?(float)d_1/d_ne1 : (float)d_1; // w
+
+    d_offset = tensor_full_offset(1 /*d_0 -- C -- for y*/, d_1, d_2, d_3, d_nb0, d_nb1, d_nb2, d_nb3);
+    *(float *)((char *)dst + d_offset) = (norm)?(float)d_2/d_ne2 : (float)d_2; // h
+}
+
+// dell_xxxx
+#define CUDA_GRID_MESH_BLOCK_SIZE 256
+static void grid_mesh_f32_cuda(float * dst, const int n, const int norm,
+        const int d_ne0, const int d_ne1, const int d_ne2, const int d_ne3,
+        const int d_nb0, const int d_nb1, const int d_nb2, const int d_nb3,
+        cudaStream_t stream) {
+
+    int num_blocks = (n + CUDA_GRID_MESH_BLOCK_SIZE - 1) / CUDA_GRID_MESH_BLOCK_SIZE;
+
+    grid_mesh_f32<<<num_blocks, CUDA_GRID_MESH_BLOCK_SIZE, 0, stream>>>(dst, 
+        n, norm, d_ne0, d_ne1, d_ne2, d_ne3, d_nb0, d_nb1, d_nb2, d_nb3);
+}
+
 void ggml_cuda_op_grid_mesh(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     float * dst_d = (float *)dst->data;
     cudaStream_t stream = ctx.stream();

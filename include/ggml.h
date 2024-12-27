@@ -494,6 +494,10 @@ extern "C" {
         GGML_OP_NORM2,
         GGML_OP_MEAN,
         GGML_OP_MEAN_EXT,
+        GGML_OP_MAX,
+        GGML_OP_MIN,
+        GGML_OP_CORR,
+        GGML_OP_GLOBAL_ATTN,
         GGML_OP_ARGMAX,
         GGML_OP_ARGMAX_EXT,
         GGML_OP_REPEAT,
@@ -550,8 +554,8 @@ extern "C" {
         GGML_OP_FLIP,
         GGML_OP_SCATTER,
         GGML_OP_SLICE_SCATTER,
-        GGML_OP_RFFT2, // https://pytorch.org/docs/stable/generated/torch.fft.rfft2.html
-        GGML_OP_IRFFT2, // https://pytorch.org/docs/stable/generated/torch.fft.irfft2.html
+        GGML_OP_RFFT2, 
+        GGML_OP_IRFFT2,
         GGML_OP_PAD,
         GGML_OP_REPLICATION_PAD2D, // torch.nn.ReplicationPad2d
         GGML_OP_REFLECTION_PAD2D,
@@ -1081,6 +1085,35 @@ extern "C" {
             struct ggml_tensor  * a,
             int                   dim);
 
+
+    GGML_API struct ggml_tensor * ggml_max(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            int                   dim);
+
+    GGML_API struct ggml_tensor * ggml_min(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            int                   dim);
+
+    // dell_xxxx
+    // https://github.com/hhcaz/correlation-layer-taichi/blob/main/corr_pure_torch.py    
+    GGML_API struct ggml_tensor * ggml_corr(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * f1,
+            struct ggml_tensor  * f2,
+            int                   patch_size);
+
+    // dell_xxxx
+    GGML_API struct ggml_tensor * ggml_global_attn(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * local_attn,
+            int                   h1,
+            int                   w1,
+            int                   h2,
+            int                   w2,
+            int                   max_disp);
+
     // argmax along rows
     GGML_API struct ggml_tensor * ggml_argmax(
             struct ggml_context * ctx,
@@ -1123,12 +1156,11 @@ extern "C" {
             struct ggml_tensor  * b,
             int                   dim);
 
-    // dell_add
+    // dell_xxxx
     // https://pytorch.org/docs/stable/generated/torch.cat.html#torch.cat    
     GGML_API struct ggml_tensor * ggml_cat(
             struct ggml_context * ctx,
             int                   n, ...); // ... last var is dim
-
 
     GGML_API struct ggml_tensor * ggml_abs(
             struct ggml_context * ctx,
@@ -1893,6 +1925,7 @@ extern "C" {
             struct ggml_tensor  * a,
             int                   dim,
             int                   ns); // new size
+    // optimization ? GGML_API struct ggml_tensor * ggml_interpolate(ctx, a, ne0, ne1, ne2, ne3) ?
 
     // dell_xxxx
     GGML_API struct ggml_tensor * ggml_grid_mesh(
@@ -1945,6 +1978,7 @@ extern "C" {
         struct ggml_tensor * index);
 
     // dell_xxxx
+    // https://pytorch.org/docs/stable/generated/torch.slice_scatter.html
     GGML_API struct ggml_tensor * ggml_slice_scatter(
         struct ggml_context * ctx,
         struct ggml_tensor * x,
@@ -1955,11 +1989,13 @@ extern "C" {
         int step);
 
     // dell_xxxx
+    // https://pytorch.org/docs/stable/generated/torch.fft.rfft2.html
     GGML_API struct ggml_tensor * ggml_rfft2(
             struct ggml_context * ctx,
             struct ggml_tensor * a);
 
     // dell_xxxx
+    // https://pytorch.org/docs/stable/generated/torch.fft.irfft2.html
     GGML_API struct ggml_tensor * ggml_irfft2(
             struct ggml_context * ctx,
             struct ggml_tensor * a);
@@ -1993,13 +2029,11 @@ extern "C" {
             int                  top,
             int                  bottom);
 
-
     // dell_xxxx
     GGML_API struct ggml_tensor * ggml_deconv_pad2d(
             struct ggml_context * ctx,
             struct ggml_tensor  * a,
             int                  stride);
-
 
     // Ref: https://github.com/CompVis/stable-diffusion/blob/main/ldm/modules/diffusionmodules/util.py#L151
     // timesteps: [N,]

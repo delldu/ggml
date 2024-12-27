@@ -2426,6 +2426,18 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
         case GGML_OP_MEAN_EXT:
             ggml_cuda_op_mean_ext(ctx, dst);
             break;
+        case GGML_OP_MAX:
+            ggml_cuda_op_max(ctx, dst);
+            break;
+        case GGML_OP_MIN:
+            ggml_cuda_op_min(ctx, dst);
+            break;
+        case GGML_OP_CORR:
+            ggml_cuda_op_corr(ctx, dst);
+            break;
+        case GGML_OP_GLOBAL_ATTN:
+            ggml_cuda_op_global_attn(ctx, dst);
+            break;
         case GGML_OP_ARGMAX_EXT:
             ggml_cuda_op_argmax_ext(ctx, dst);
             break;

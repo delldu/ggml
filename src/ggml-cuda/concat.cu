@@ -261,7 +261,7 @@ static void cat_f32_cuda(const float * src, float * dst,
         d_nb0, d_nb1, d_nb2, d_nb3);
 }
 
-// dell_add
+// dell_xxxx
 void ggml_cuda_op_cat(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     GGML_ASSERT(dst->type  == GGML_TYPE_F32);
 
